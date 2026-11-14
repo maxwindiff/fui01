@@ -56,7 +56,7 @@ export function PersonCard() {
       <ol className="ties">
         {CONNECTIONS.map((c) => (
           <li key={c.id}>
-            <Ent kind={c.kind} sector={c.sector}>{c.name}</Ent>
+            <Ent kind={c.kind} sector={c.sector} id={c.id}>{c.name}</Ent>
             <span className="ties-note">{c.note}</span>
             <span className="ties-bar"><i style={{ width: `${(c.v / max) * 100}%` }} /></span>
             <span className="num">{fmtMoney(c.v)}</span>
@@ -101,6 +101,8 @@ function LeanAxis() {
   );
 }
 
+const PARTY = { D: "Democrat", R: "Republican", I: "Independent" };
+
 function Hemicycle() {
   const rows = [5, 7, 9];
   const radii = [36, 58, 80];
@@ -116,7 +118,7 @@ function Hemicycle() {
       {pos.map((p, i) => {
         const s = SEATS[i];
         return (
-          <g key={i} className={`seat party-${s.party}${s.focus ? " focus" : ""}`}>
+          <g key={i} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
             {s.funded ? <circle className="seat-ring" cx={p.x} cy={p.y} r="9.6" /> : null}
             <circle className="seat-dot" cx={p.x} cy={p.y} r="6" />
             {s.focus ? <path className="seat-mark" d={`M${p.x - 3} ${p.y}h6M${p.x} ${p.y - 3}v6`} /> : null}
@@ -132,11 +134,12 @@ function VoteStrip() {
     <svg className="votes" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
       <path className="c-axis" d={`M0 15H${VOTES.length * 6}`} vectorEffect="non-scaling-stroke" />
       {VOTES.map((v, i) =>
-        v.v === 0 ? (
-          <rect key={i} className="vote absent" x={i * 6 + 1.5} y={14} width={2} height={2} />
-        ) : (
-          <rect key={i} className={`vote${v.key ? " key" : ""}${v.v < 0 ? " against" : ""}`} x={i * 6 + 1} y={v.v > 0 ? 3 : 15} width={3} height={12} />
-        ),
+        <g key={i} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
+          <rect className="c-hit" x={i * 6} y={0} width={6} height={30} />
+          {v.v === 0
+            ? <rect className="vote absent" x={i * 6 + 1.5} y={14} width={2} height={2} />
+            : <rect className={`vote${v.key ? " key" : ""}${v.v < 0 ? " against" : ""}`} x={i * 6 + 1} y={v.v > 0 ? 3 : 15} width={3} height={12} />}
+        </g>,
       )}
     </svg>
   );

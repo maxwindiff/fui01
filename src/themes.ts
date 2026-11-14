@@ -1,4 +1,4 @@
-export type ThemeId = "vellum" | "strata" | "orrery" | "armillary";
+export type ThemeId = "vellum" | "orrery";
 export type RGBA = [number, number, number, number];
 
 export interface DeepSpace {
@@ -20,7 +20,11 @@ export interface Motion {
   reveal: number;
   morph: number;
   hover: number;
+  layout: number;
+  expand: number;
+  sort: number;
   ease: string;
+  character: string;
   notes: { name: string; what: string; timing: string }[];
 }
 
@@ -41,7 +45,7 @@ export interface GpuStyle {
     city: { color: string; shape: number; fill: number };
     event: { color: string };
   };
-  deep?: DeepSpace;
+  deep: DeepSpace;
 }
 
 export interface Theme {
@@ -70,8 +74,8 @@ const vellum: Theme = {
   name: "Vellum",
   mode: "light",
   concept:
-    "Drafting film under a light table. Graphite hairlines carry the structure, indigo traces mark government, orange marks money, and reading text is set in a book serif with notes in the margin.",
-  lineage: "Paper schematics, ink orbit plots, faded indigo route diagrams",
+    "Drafting film under a light table. Graphite hairlines carry the structure, indigo traces mark government, orange marks money, and reading text is set in a book serif with notes in the margin. The network pulls apart into sheets of film stacked by sector, with ties passing between them.",
+  lineage: "Paper schematics, ink orbit plots, tilted schematic sheets with shallow depth of field",
   vars: {
     "--bg": "#E6EBE4",
     "--bg-image":
@@ -79,9 +83,8 @@ const vellum: Theme = {
     "--surface": "rgba(244,247,241,0.55)",
     "--surface-2": "#DAE0D9",
     "--viz-bg": "#EBEFE8",
-    "--viz-image":
-      "radial-gradient(circle at 1px 1px, rgba(23,27,26,0.16) 0.7px, transparent 1.1px)",
-    "--viz-image-size": "22px 22px",
+    "--viz-image": "radial-gradient(80% 80% at 50% 45%, #E9EEE7 0%, #D3DBD3 100%)",
+    "--viz-image-size": "auto",
     "--viz-ink": "#171B1A",
     "--ink": "#171B1A",
     "--ink-2": "#48524F",
@@ -170,6 +173,18 @@ const vellum: Theme = {
       city: { color: "#171B1A", shape: 0, fill: -1 },
       event: { color: "#4E59B8" },
     },
+    deep: {
+      form: "strata",
+      pitch: 0.6,
+      yaw: -0.5,
+      sway: 0.07,
+      swayPeriod: 26,
+      aperture: 2.6,
+      fogFloor: 0.45,
+      mapPitch: 0.74,
+      mapYaw: -0.3,
+      labels: ["Flat", "Strata"],
+    },
   },
   motion: {
     enter: 520,
@@ -177,12 +192,18 @@ const vellum: Theme = {
     reveal: 1500,
     morph: 1100,
     hover: 180,
+    layout: 380,
+    expand: 220,
+    sort: 320,
     ease: "cubic-bezier(0.2, 0.7, 0.1, 1)",
+    character:
+      "A frame changes size like a mask over a drawing. Its contents keep their scale while the frame crops or uncovers them, and a new sheet slides in from the edge it belongs to.",
     notes: [
       { name: "Plot in", what: "Each frame wipes in from the left as if a pen plotter drew it. Chart lines draw along their own length and bars rise from the baseline.", timing: "520 ms a panel, 45 ms apart" },
-      { name: "Ink ties", what: "Network ties and state borders draw from source to target, then nodes land with a slight overshoot.", timing: "1.5 s, drawn on the GPU" },
-      { name: "Money", what: "Dashes march along money ties in the direction the money moved. Nothing else moves at rest.", timing: "0.9 dash lengths a second" },
-      { name: "Respond", what: "Hover rings, tooltips and row highlights answer the pointer without easing in.", timing: "under 180 ms" },
+      { name: "Ink ties", what: "Network ties and state borders draw from source to target, then the nodes appear.", timing: "1.5 s, drawn on the GPU" },
+      { name: "Pull apart", what: "Switching between Flat and Strata separates the three sheets and tips the camera in a single move, so each node keeps its place.", timing: "1.1 s, ease in and out" },
+      { name: "Drift", what: "At rest the stack sways a few degrees so depth reads through parallax, and sheets away from the focal plane soften. The sway stops while the pointer is over the view.", timing: "26 s a cycle" },
+      { name: "Money", what: "Dashes march along money ties, down or up through the sheets in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -193,8 +214,8 @@ const orrery: Theme = {
   name: "Orrery",
   mode: "dark",
   concept:
-    "A brass instrument in a dark room. The subject sits at the centre and everything else orbits on engraved rings by degree of separation. Amber carries money, teal carries government, ivory is for reading.",
-  lineage: "Engraved astrolabes, amber terrain tables, thin gold line art on black",
+    "A brass instrument in a dark room. The subject stands at the centre and everything else orbits on engraved rings by degree of separation, each entity on a stem as tall as its weight in the case. Amber carries money, teal carries government, ivory is for reading.",
+  lineage: "Engraved astrolabes, amber terrain tables with markers on stems, thin gold line art on black",
   vars: {
     "--bg": "#0B0906",
     "--bg-image":
@@ -202,8 +223,7 @@ const orrery: Theme = {
     "--surface": "#120F0A",
     "--surface-2": "#1C1710",
     "--viz-bg": "#0E0B07",
-    "--viz-image":
-      "radial-gradient(70% 70% at 50% 50%, #17120A 0%, #0E0B07 70%)",
+    "--viz-image": "radial-gradient(60% 60% at 50% 55%, #1E170C 0%, #0D0A06 75%)",
     "--viz-image-size": "auto",
     "--viz-ink": "#F0E4CC",
     "--ink": "#F0E4CC",
@@ -294,68 +314,6 @@ const orrery: Theme = {
       city: { color: "#F0E4CC", shape: 3, fill: -1 },
       event: { color: "#3FCDB8" },
     },
-  },
-  motion: {
-    enter: 700,
-    stagger: 60,
-    reveal: 2200,
-    morph: 1400,
-    hover: 220,
-    ease: "cubic-bezier(0.3, 0, 0.1, 1)",
-    notes: [
-      { name: "Wind up", what: "Each plate fades up while the tick scale under its title sweeps from left to right. Chart lines draw along their own length.", timing: "700 ms a panel, 60 ms apart" },
-      { name: "Sweep", what: "Rings sweep round from twelve o'clock, innermost first, and nodes light as their ring arrives.", timing: "2.2 s, drawn on the GPU" },
-      { name: "Clockwork", what: "Tick scales turn slowly, each ring at its own rate, and pulses travel along money ties in the direction the money moved.", timing: "one turn in 4 to 12 minutes" },
-      { name: "Respond", what: "Hover rings, tooltips and row highlights answer the pointer with a short glow.", timing: "under 220 ms" },
-    ],
-  },
-};
-
-const strata: Theme = {
-  ...vellum,
-  id: "strata",
-  name: "Strata",
-  concept:
-    "Vellum pulled apart into sheets. Government, intermediaries and companies each sit on a sheet of film, stacked over the light table, and ties pass between them. Panels hang at a slight angle and turn to face the reader when touched.",
-  lineage: "Tilted schematic sheets, layered film, shallow depth of field",
-  gpu: {
-    ...vellum.gpu,
-    deep: {
-      form: "strata",
-      pitch: 0.6,
-      yaw: -0.5,
-      sway: 0.07,
-      swayPeriod: 26,
-      aperture: 2.6,
-      fogFloor: 0.45,
-      mapPitch: 0.74,
-      mapYaw: -0.3,
-      labels: ["Flat", "Strata"],
-    },
-  },
-  motion: {
-    ...vellum.motion,
-    enter: 760,
-    stagger: 60,
-    notes: [
-      { name: "Lay down", what: "Sheets drop onto the table from behind the page plane, one after another, and settle at their resting angle.", timing: "760 ms a sheet, 60 ms apart" },
-      { name: "Pull apart", what: "Switching between Flat and Strata separates the three layers and tips the camera in a single move, so each node keeps its place and the reader keeps their bearings.", timing: "1.1 s, ease in and out" },
-      { name: "Face the reader", what: "A panel under the pointer or holding focus turns flat and steps forward. Neighbours stay tilted. Text is read on a flat sheet.", timing: "180 ms" },
-      { name: "Drift", what: "At rest the stack sways a few degrees so depth reads through parallax. Sheets away from the focal plane soften. The sway stops while the pointer is over the view.", timing: "26 s a cycle" },
-      { name: "Money", what: "Dashes march along money ties, down or up through the sheets in the direction the money moved.", timing: "0.9 dash lengths a second" },
-    ],
-  },
-};
-
-const armillary: Theme = {
-  ...orrery,
-  id: "armillary",
-  name: "Armillary",
-  concept:
-    "Orrery raised off the table. Rings step down from the centre like the plates of an astrolabe, each entity stands on a stem as tall as its weight in the case, and money arcs overhead. The instrument turns slowly until touched.",
-  lineage: "Tilted ring instruments, terrain tables with markers on stems, astrolabe plates",
-  gpu: {
-    ...orrery.gpu,
     deep: {
       form: "armillary",
       pitch: 0.6,
@@ -370,18 +328,82 @@ const armillary: Theme = {
     },
   },
   motion: {
-    ...orrery.motion,
-    enter: 900,
-    stagger: 70,
+    enter: 700,
+    stagger: 60,
+    reveal: 2200,
+    morph: 1400,
+    hover: 220,
+    layout: 560,
+    expand: 320,
+    sort: 460,
+    ease: "cubic-bezier(0.3, 0, 0.1, 1)",
+    character:
+      "A plate glides to its new place and settles. Its rim glows for a moment on arrival and the tick scale under its title sweeps across again.",
     notes: [
-      { name: "Raise", what: "Plates swing up from lying flat and lock at their resting angle while the tick scale under each title sweeps across.", timing: "900 ms a plate, 70 ms apart" },
+      { name: "Wind up", what: "Each plate fades up while the tick scale under its title sweeps from left to right. Chart lines draw along their own length.", timing: "700 ms a panel, 60 ms apart" },
+      { name: "Sweep", what: "Rings sweep round from twelve o'clock, innermost first, and nodes light as their ring arrives.", timing: "2.2 s, drawn on the GPU" },
       { name: "Lift off", what: "Switching between Plan and Armillary raises every stem from the ring it stands on and tips the camera in a single move.", timing: "1.4 s, ease in and out" },
-      { name: "Face the reader", what: "A panel under the pointer or holding focus turns flat and steps forward, and its rim brightens.", timing: "220 ms" },
-      { name: "Turn", what: "At rest the instrument swings slowly through a third of a turn and back. Tick scales turn against it at their own rates. Both stop while the pointer is over the view.", timing: "48 s a cycle" },
+      { name: "Turn", what: "At rest the instrument swings slowly through a third of a turn and back while the tick scales turn against it. Both stop while the pointer is over the view.", timing: "48 s a cycle" },
       { name: "Money", what: "Pulses travel along the arcs overhead in the direction the money moved.", timing: "one pulse every 4 to 6 s" },
     ],
   },
 };
 
-export const THEMES: Theme[] = [vellum, strata, orrery, armillary];
+export const THEMES: Theme[] = [vellum, orrery];
 export const themeById = (id: string) => THEMES.find((t) => t.id === id) ?? vellum;
+
+export interface Interaction {
+  name: string;
+  what: string;
+  timing: (m: Motion) => string;
+  action?: { label: string; run: string };
+}
+
+// `run` is a command the app shell carries out when the reader presses the button beside the entry.
+export const INTERACTIONS: Interaction[] = [
+  {
+    name: "Tooltip",
+    what: "A data mark answers the pointer at once and the readout snaps to the nearest value. Labels, codes and icon buttons wait a third of a second, and after the first one opens the next ones open without the wait. An entity name shows a card.",
+    timing: (m) => `0 ms on data, 350 ms on labels, ${m.hover} ms to fade`,
+  },
+  {
+    name: "Open a row",
+    what: "A filing or a document in a list opens in place and moves the later rows down. The opened part carries its own actions.",
+    timing: (m) => `${m.expand} ms`,
+    action: { label: "Open a filing", run: "filing" },
+  },
+  {
+    name: "Sort",
+    what: "A column heading sorts by that column and a second press reverses the order. Each row travels to its new place, so the eye can follow one of them.",
+    timing: (m) => `${m.sort} ms, rows 14 ms apart`,
+    action: { label: "Sort by amount", run: "sort" },
+  },
+  {
+    name: "Full size",
+    what: "The corner button puts a panel on a stage. The other panels fold to tiles in a rail at the side, each with a line of summary, and choosing a tile swaps it onto the stage. Escape returns to the board.",
+    timing: (m) => `${m.layout} ms`,
+    action: { label: "Stage the network", run: "stage" },
+  },
+  {
+    name: "Dossier",
+    what: "An entity name anywhere opens its dossier in a drawer on the right. The board narrows to make room and the network isolates the same entity. Names inside the dossier lead on, and a trail leads back.",
+    timing: (m) => `${m.layout} ms`,
+    action: { label: "Open Petra Voss", run: "dossier" },
+  },
+  {
+    name: "Linked marks",
+    what: "Pointing at a month in the small multiples reads that month in all six. Pointing at a recipient in the money flow traces its money back to the sources. A footnote number and its margin note light together, and a state in the ranked list lights on the map.",
+    timing: () => "0 ms",
+  },
+  {
+    name: "Measure",
+    what: "Dragging across the timeline marks a window and counts the contacts, gifts and events inside it.",
+    timing: () => "follows the pointer",
+    action: { label: "Measure the 90 days", run: "brush" },
+  },
+  {
+    name: "Commit",
+    what: "Add to brief turns the button to its done state and the count in the top bar steps up. Dismiss folds a finding to one line with an undo.",
+    timing: (m) => `${m.expand} ms`,
+  },
+];

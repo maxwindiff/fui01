@@ -1,7 +1,78 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Glyph, PartyChip, Segmented, Spark } from "./primitives";
 import type { Kind, Sector } from "../data";
-import { SPARK_CONTACTS, SPARK_MONEY, SPEND_HALVORSEN } from "../data";
+import { DOCS, entity, FILINGS, fmtMoney, GRAPH, named, SPARK_CONTACTS, SPARK_MONEY, SPEND_HALVORSEN } from "../data";
+import { useWorkspace } from "../workspace";
+
+interface Hit { key: string; group: string; label: string; sub: string; glyph?: { kind: Kind; sector: Sector }; open: () => void }
+
+function Search() {
+  const ws = useWorkspace();
+  const [q, setQ] = useState("voss");
+  const [open, setOpen] = useState(false);
+  const [mark, setMark] = useState(0);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "/" || (e.target as HTMLElement).closest("input, textarea")) return;
+      e.preventDefault();
+      input.current?.focus();
+      input.current?.select();
+    };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, []);
+  const needle = q.trim().toLowerCase();
+  const has = (text: string) => text.toLowerCase().includes(needle);
+  const hits: Hit[] = needle ? [
+    ...GRAPH.entities.filter((e) => named(e) && (has(e.name) || has(e.role ?? ""))).slice(0, 5).map((e) => ({
+      key: e.id, group: "Entities", label: e.name, sub: e.role ?? "", glyph: { kind: e.kind, sector: e.sector }, open: () => ws.inspect(e.id),
+    })),
+    ...DOCS.filter((d) => has(d.title) || d.about.some((id) => has(entity(id)!.name))).slice(0, 3).map((d) => ({
+      key: d.id, group: "Documents", label: d.title, sub: `${d.type}, ${d.date}`, open: () => ws.openDoc(d.id),
+    })),
+    ...FILINGS.filter((f) => has(f.reg) || has(f.id) || has(f.client)).slice(0, 2).map((f) => ({
+      key: f.id, group: "Filings", label: `${f.reg}, ${f.q}`, sub: `${f.id}, ${fmtMoney(f.amt)}`, open: () => { ws.reveal("10"); ws.run("filing", f.id); },
+    })),
+  ] : [];
+  const choose = (h: Hit) => { setOpen(false); input.current?.blur(); h.open(); };
+  const count = (g: string) => hits.filter((h) => h.group === g).length;
+  return (
+    <div className="search-wrap" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }}>
+      <label className="search">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.6 10.6 14 14" /></svg>
+        <input
+          ref={input} type="text" value={q} placeholder="People, firms, filings, documents"
+          role="combobox" aria-expanded={open && hits.length > 0} aria-controls="search-results" aria-label="Search people, filings and documents"
+          onChange={(e) => { setQ(e.target.value); setOpen(true); setMark(0); }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); setOpen(true); setMark((k) => Math.min(hits.length - 1, k + 1)); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); setMark((k) => Math.max(0, k - 1)); }
+            else if (e.key === "Enter" && open && hits[mark]) choose(hits[mark]);
+            else if (e.key === "Escape") { e.stopPropagation(); setOpen(false); }
+          }}
+        />
+        <kbd>/</kbd>
+      </label>
+      {open && needle ? (
+        <ul className="results" id="search-results" role="listbox">
+          {hits.length === 0 ? <li className="results-none">Nothing in this case matches. Try a name, a firm or a filing number.</li> : null}
+          {hits.map((h, k) => (
+            <li key={h.key} role="option" aria-selected={k === mark} className={k === mark ? "on" : ""} onPointerEnter={() => setMark(k)} onPointerDown={(e) => { e.preventDefault(); choose(h); }}>
+              {hits[k - 1]?.group !== h.group ? <span className="results-g">{h.group}</span> : <span />}
+              <span className="results-l">{h.glyph ? <Glyph kind={h.glyph.kind} sector={h.glyph.sector} /> : null}{h.label}</span>
+              <span className="results-s">{h.sub}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="note">
+        {needle ? `${count("Entities")} entities, ${count("Documents")} documents and ${count("Filings")} filings match.` : "Press / from anywhere on the board to search."}
+      </p>
+    </div>
+  );
+}
 
 const FILTERS: { id: string; label: string; kind: Kind; sector: Sector; n: number }[] = [
   { id: "official", label: "Officials", kind: "official", sector: "gov", n: 52 },
@@ -27,18 +98,13 @@ export function Controls() {
     <div className="kit">
       <section>
         <h4 className="sub-h">Search</h4>
-        <label className="search">
-          <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="7" cy="7" r="4.6" /><path d="M10.6 10.6 14 14" /></svg>
-          <input type="search" defaultValue="from:voss to:ool before:2025-11-06" aria-label="Search people, filings and documents" />
-          <kbd>/</kbd>
-        </label>
-        <p className="note">31 documents, 14 contacts and 2 filings match.</p>
+        <Search />
       </section>
       <section>
         <h4 className="sub-h">Show</h4>
         <div className="chips">
           {FILTERS.map((f) => (
-            <button key={f.id} type="button" className={`chip filter${on.has(f.id) ? " on" : ""}`} aria-pressed={on.has(f.id)} onClick={() => toggle(f.id)}>
+            <button key={f.id} type="button" className={`chip filter${on.has(f.id) ? " on" : ""}`} aria-pressed={on.has(f.id)} onClick={() => toggle(f.id)} data-tip={`${on.has(f.id) ? "Hide" : "Show"} ${f.label.toLowerCase()}`}>
               <Glyph kind={f.kind} sector={f.sector} />
               {f.label}
               <span className="num">{f.n}</span>

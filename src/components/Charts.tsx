@@ -1,15 +1,37 @@
-import { FLOW_NODES, FLOWS, MULTIPLES, QUARTERS, SLOPE, SPEND_HALVORSEN, SPEND_NOTES, SPEND_PEER_HI, SPEND_PEER_LO, SPEND_PEER_MED, fmtMoney } from "../data";
-import { useSize } from "./primitives";
+import { useState } from "react";
+import type { PointerEvent as RPointerEvent } from "react";
+import { FLOW_NODES, FLOWS, MULTIPLES, MULTIPLES_T0, QUARTERS, SLOPE, SPEND_HALVORSEN, SPEND_NOTES, SPEND_PEER_HI, SPEND_PEER_LO, SPEND_PEER_MED, fmtMoney } from "../data";
+import { tip, TipRow } from "../tip";
+import { useWorkspace } from "../workspace";
+import { usePanel, useSize } from "./primitives";
+
+const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 export function SpendChart() {
   const [ref, { w }] = useSize<HTMLDivElement>();
-  const H = 250, l = 40, r = 118, t = 24, b = 26;
+  const { staged } = usePanel();
+  const [at, setAt] = useState(-1);
+  const H = staged ? 520 : 250, l = 40, r = 118, t = 24, b = 26;
   const n = QUARTERS.length;
   const x = (i: number) => l + (i / (n - 1)) * (w - l - r);
   const y = (v: number) => t + (1 - v / 3000) * (H - t - b);
   const line = (d: number[]) => d.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join("");
   const band = `${line(SPEND_PEER_HI)}${SPEND_PEER_LO.map((v, i) => `L${x(n - 1 - i).toFixed(1)} ${y(SPEND_PEER_LO[n - 1 - i]).toFixed(1)}`).join("")}Z`;
   const peak = SPEND_HALVORSEN.indexOf(Math.max(...SPEND_HALVORSEN));
+  const move = (e: RPointerEvent<SVGRectElement>) => {
+    const box = e.currentTarget.ownerSVGElement!.getBoundingClientRect();
+    const i = Math.max(0, Math.min(n - 1, Math.round(((e.clientX - box.left - l) / (w - l - r)) * (n - 1))));
+    setAt(i);
+    const ha = SPEND_HALVORSEN[i], med = SPEND_PEER_MED[i];
+    tip.show({ x: box.left + x(i), y: box.top + y(ha) }, (
+      <>
+        <b>{QUARTERS[i].y} Q{QUARTERS[i].q}</b>
+        <TipRow k="Halvorsen" v={fmtMoney(ha)} strong />
+        <TipRow k="Peer median" v={fmtMoney(med)} />
+        <TipRow k="Ratio" v={`${(ha / med).toFixed(1)} to 1`} />
+      </>
+    ));
+  };
   return (
     <div ref={ref} className="chart">
       {w > 0 ? (
@@ -48,6 +70,14 @@ export function SpendChart() {
           <text className="c-label" x={x(n - 1) + 9} y={y(SPEND_HALVORSEN[n - 1]) + 15}>{fmtMoney(SPEND_HALVORSEN[n - 1])} last quarter</text>
           <text className="c-label ink" x={x(n - 1) + 9} y={y(SPEND_PEER_MED[n - 1]) + 12}>Peer median</text>
           <text className="c-label" x={x(n - 1) + 9} y={y(SPEND_PEER_MED[n - 1]) + 26}>band: 5 contractors</text>
+          {at >= 0 ? (
+            <g className="c-probe">
+              <path className="c-cross" d={`M${x(at).toFixed(1)} ${t}V${H - b}`} />
+              <circle className="c-probe-dot thin" cx={x(at)} cy={y(SPEND_PEER_MED[at])} r="3.2" />
+              <circle className="c-probe-dot" cx={x(at)} cy={y(SPEND_HALVORSEN[at])} r="4.4" />
+            </g>
+          ) : null}
+          <rect className="c-hit" x={l} y={t} width={Math.max(0, w - l - r)} height={H - t - b} onPointerMove={move} onPointerLeave={() => { setAt(-1); tip.hide(); }} />
         </svg>
       ) : null}
     </div>
@@ -56,7 +86,9 @@ export function SpendChart() {
 
 export function SlopeChart() {
   const [ref, { w }] = useSize<HTMLDivElement>();
-  const H = 250, t = 34, b = 14;
+  const { staged } = usePanel();
+  const [hot, setHot] = useState<string | null>(null);
+  const H = staged ? 520 : 250, t = 34, b = 14;
   const xa = 150, xb = w - 58;
   const y = (v: number) => t + (1 - v / 40) * (H - t - b);
   const spread = (key: "a" | "b") => {
@@ -68,11 +100,24 @@ export function SlopeChart() {
   return (
     <div ref={ref} className="chart">
       {w > 0 ? (
-        <svg width={w} height={H} role="img" aria-label="Share of the network's political giving by recipient, 2022 cycle against 2024 cycle">
+        <svg width={w} height={H} data-probing={hot !== null} role="img" aria-label="Share of the network's political giving by recipient, 2022 cycle against 2024 cycle">
           <text className="c-label" x={xa} y={14} textAnchor="end">2022 cycle</text>
           <text className="c-label" x={xb} y={14}>2024 cycle</text>
           {SLOPE.map((s) => (
-            <g key={s.name} className={s.focus ? "slope focus" : "slope"}>
+            <g
+              key={s.name} className={`slope${s.focus ? " focus" : ""}${hot === s.name ? " on" : ""}`}
+              onPointerEnter={() => setHot(s.name)}
+              onPointerMove={(e) => tip.show({ x: e.clientX, y: e.clientY }, (
+                <>
+                  <b>{s.name}</b>
+                  <TipRow k="2022 cycle" v={`${s.a}%`} />
+                  <TipRow k="2024 cycle" v={`${s.b}%`} />
+                  <TipRow k="Change" v={`${s.b > s.a ? "up" : "down"} ${Math.abs(s.b - s.a)} points`} strong />
+                </>
+              ))}
+              onPointerLeave={() => { setHot(null); tip.hide(); }}
+            >
+              <path className="c-hit" d={`M0 ${ya.get(s.name)}H${xa + 8}L${xb - 8} ${y(s.b).toFixed(1)}H${w}`} />
               <path pathLength={1} d={`M${xa + 8} ${y(s.a).toFixed(1)}L${xb - 8} ${y(s.b).toFixed(1)}`} />
               <circle cx={xa + 8} cy={y(s.a)} r="2.2" />
               <circle cx={xb - 8} cy={y(s.b)} r="2.2" />
@@ -87,15 +132,29 @@ export function SlopeChart() {
 }
 
 export function Multiples() {
+  const [at, setAt] = useState(-1);
   const max = Math.max(...MULTIPLES.flatMap((m) => m.data));
+  const len = MULTIPLES[0].data.length;
+  const month = (i: number) => {
+    const k = MULTIPLES_T0.m + i;
+    return `${MONTH[k % 12]} ${MULTIPLES_T0.y + Math.floor(k / 12)}`;
+  };
+  const move = (e: RPointerEvent<SVGSVGElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    setAt(Math.max(0, Math.min(len - 1, Math.floor(((e.clientX - box.left) / box.width) * len))));
+  };
   return (
-    <div className="multiples">
+    <div className="multiples" data-probing={at >= 0}>
       {MULTIPLES.map((m) => (
         <figure key={m.name}>
-          <figcaption><span>{m.name}</span><b className="num">{m.data.reduce((a, v) => a + v, 0)}</b></figcaption>
-          <svg viewBox={`0 0 ${m.data.length * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true">
+          <figcaption>
+            <span>{m.name}</span>
+            {at >= 0 ? <span className="mult-at"><span className="dim">{month(at)}</span><b className="num">{m.data[at]}</b></span> : <b className="num">{m.data.reduce((a, v) => a + v, 0)}</b>}
+          </figcaption>
+          <svg viewBox={`0 0 ${len * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true" onPointerMove={move} onPointerLeave={() => setAt(-1)}>
+            {at >= 0 ? <rect className="mult-col" x={at * 4} y={0} width={4} height={max} /> : null}
             {m.data.map((v, i) => (
-              <rect key={i} className={i >= 10 && i <= 12 ? "mult key" : "mult"} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
+              <rect key={i} className={`mult${i >= 10 && i <= 12 ? " key" : ""}${i === at ? " at" : ""}`} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
             ))}
           </svg>
         </figure>
@@ -104,9 +163,28 @@ export function Multiples() {
   );
 }
 
+// Every ribbon on a path into or out of a node. Each pass follows one direction, so a trace upstream stays upstream.
+function trace(start: string[], dir: "up" | "down", found = new Set<number>()) {
+  const seen = new Set(start);
+  const queue = [...start];
+  while (queue.length) {
+    const id = queue.shift()!;
+    FLOWS.forEach((f, i) => {
+      if ((dir === "up" ? f.t : f.s) !== id) return;
+      found.add(i);
+      const next = dir === "up" ? f.s : f.t;
+      if (!seen.has(next)) { seen.add(next); queue.push(next); }
+    });
+  }
+  return found;
+}
+
 export function MoneyFlow() {
   const [ref, { w }] = useSize<HTMLDivElement>();
-  const H = 380, top = 46, nodeW = 9, gap = [16, 30, 12];
+  const { staged } = usePanel();
+  const ws = useWorkspace();
+  const [lit, setLit] = useState<Set<number> | null>(null);
+  const H = staged ? 620 : 380, top = 46, nodeW = 9, gap = [16, 30, 12];
   const lm = 150, rm = 168;
   const total = (id: string, side: "s" | "t") => FLOWS.filter((f) => f[side] === id).reduce((a, f) => a + f.v, 0);
   const value = (id: string) => Math.max(total(id, "s"), total(id, "t"));
@@ -124,38 +202,65 @@ export function MoneyFlow() {
     }
   });
   const order = new Map(FLOW_NODES.map((nd, i) => [nd.id, i]));
+  const name = (id: string) => FLOW_NODES.find((nd) => nd.id === id)!.name;
   const hot = new Set(["wh", "ad"]);
-  const ribbons = [...FLOWS]
-    .sort((p, q) => order.get(p.s)! - order.get(q.s)! || order.get(p.t)! - order.get(q.t)!)
-    .map((f) => {
+  const ribbons = FLOWS.map((f, i) => ({ f, i }))
+    .sort((p, q) => order.get(p.f.s)! - order.get(q.f.s)! || order.get(p.f.t)! - order.get(q.f.t)!)
+    .map(({ f, i }) => {
       const a = box.get(f.s)!, b = box.get(f.t)!;
       const h = f.v * scale;
       const y0 = a.y + a.out, y1 = b.y + b.in;
       a.out += h; b.in += h;
       const x0 = a.x + nodeW, x1 = b.x, mx = (x0 + x1) / 2;
       return {
-        f,
+        f, i,
         hot: hot.has(f.t),
         d: `M${x0} ${y0}C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}V${y1 + h}C${mx} ${y1 + h} ${mx} ${y0 + h} ${x0} ${y0 + h}Z`,
       };
     });
+  const nodeLit = (id: string) => !lit || FLOWS.some((f, i) => lit.has(i) && (f.s === id || f.t === id));
+  const leave = () => { setLit(null); tip.hide(); };
   return (
     <div ref={ref} className="chart flow">
       {w > 0 ? (
-        <svg width={w} height={H} role="img" aria-label="Money flow from four sources through four vehicles to seven recipients, 2024 cycle">
+        <svg width={w} height={H} data-probing={lit !== null} role="img" aria-label="Money flow from four sources through four vehicles to seven recipients, 2024 cycle">
           {["Source", "Vehicle", "Recipient"].map((label, c) => (
             <text key={label} className="c-label" x={c === 0 ? xs[0] + nodeW : c === 1 ? xs[1] : xs[2]} y={11} textAnchor={c === 0 ? "end" : "start"}>{label}</text>
           ))}
-          {ribbons.map((rb, i) => (
-            <path key={i} className={rb.hot ? "ribbon hot" : "ribbon"} d={rb.d}>
-              <title>{`${FLOW_NODES.find((nd) => nd.id === rb.f.s)!.name} to ${FLOW_NODES.find((nd) => nd.id === rb.f.t)!.name}: ${fmtMoney(rb.f.v)}`}</title>
-            </path>
+          {ribbons.map((rb) => (
+            <path
+              key={rb.i} className={`ribbon${rb.hot ? " hot" : ""}${lit?.has(rb.i) ? " on" : ""}`} d={rb.d}
+              onPointerEnter={() => setLit(trace([rb.f.t], "down", trace([rb.f.s], "up", new Set([rb.i]))))}
+              onPointerMove={(e) => tip.show({ x: e.clientX, y: e.clientY }, (
+                <>
+                  <b>{name(rb.f.s)} to {name(rb.f.t)}</b>
+                  <TipRow k="Amount" v={fmtMoney(rb.f.v)} strong />
+                  <TipRow k={`Share of what ${name(rb.f.s)} paid out`} v={`${Math.round((rb.f.v / total(rb.f.s, "s")) * 100)}%`} />
+                </>
+              ))}
+              onPointerLeave={leave}
+            />
           ))}
           {FLOW_NODES.map((nd) => {
             const bx = box.get(nd.id)!;
             const v = value(nd.id);
             return (
-              <g key={nd.id} className={`flow-node sec-${nd.sector}${hot.has(nd.id) ? " hot" : ""}`}>
+              <g
+                key={nd.id} className={`flow-node sec-${nd.sector}${hot.has(nd.id) ? " hot" : ""}${nodeLit(nd.id) ? "" : " off"}${nd.ent ? " link" : ""}`}
+                onPointerEnter={(e) => {
+                  setLit(trace([nd.id], "down", trace([nd.id], "up")));
+                  tip.show(e.currentTarget.querySelector("rect")!, (
+                    <>
+                      <b>{nd.name}</b>
+                      {nd.col > 0 ? <TipRow k="Received" v={fmtMoney(total(nd.id, "t"))} /> : null}
+                      {nd.col < 2 ? <TipRow k="Paid out" v={fmtMoney(total(nd.id, "s"))} /> : null}
+                      {nd.ent ? <span className="tip-foot">Select to open the dossier.</span> : null}
+                    </>
+                  ));
+                }}
+                onPointerLeave={leave}
+                onClick={nd.ent ? () => { tip.hide(); ws.inspect(nd.ent!); } : undefined}
+              >
                 <rect x={bx.x} y={bx.y} width={nodeW} height={Math.max(1.5, bx.h)} />
                 {nd.col === 0 ? (
                   <>

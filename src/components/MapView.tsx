@@ -6,18 +6,18 @@ import { fmtMoney, MAP_EVENTS, STATE_GIVING } from "../data";
 import { rgba } from "../themes";
 import type { Theme } from "../themes";
 import { Segmented } from "./primitives";
+import { tip } from "../tip";
 
-interface Tip { x: number; y: number; name: string; value: number }
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 export function MapView({ theme }: { theme: Theme }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const labels = useRef<HTMLDivElement>(null);
   const deep = theme.gpu.deep;
-  const [tip, setTip] = useState<Tip | null>(null);
-  const [space, setSpace] = useState<"flat" | "deep">(deep ? "deep" : "flat");
+  const [lit, setLit] = useState<string | null>(null);
+  const [space, setSpace] = useState<"flat" | "deep">("deep");
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
-  const api = useRef<{ setDeep: (on: boolean) => void } | null>(null);
+  const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void } | null>(null);
 
   useEffect(() => {
     let gone = false;
@@ -87,8 +87,10 @@ export function MapView({ theme }: { theme: Theme }) {
       }
       const g = scene.ground(e.offsetX, e.offsetY);
       const s = g ? stateAt(model, g[0], g[1]) : -1;
-      if (s !== hover) { hover = s; push(); }
-      setTip(s >= 0 ? { x: e.offsetX, y: e.offsetY, name: model.states[s].name, value: model.states[s].value } : null);
+      if (s !== hover) { hover = s; push(); setLit(s >= 0 ? model.states[s].code : null); }
+      if (s < 0) { tip.hide(); return; }
+      const st = model.states[s];
+      tip.show({ x: e.clientX, y: e.clientY }, <><b>{st.name}</b><span>{st.value ? fmtMoney(st.value) : "No recorded giving"}</span></>);
     };
     const down = (e: PointerEvent) => {
       if (!deep || !on) return;
@@ -100,7 +102,8 @@ export function MapView({ theme }: { theme: Theme }) {
     const leave = () => {
       hovering = false;
       if (hover !== -1) { hover = -1; push(); }
-      setTip(null);
+      setLit(null);
+      tip.hide();
     };
     const ro = new ResizeObserver(place);
 
@@ -109,6 +112,11 @@ export function MapView({ theme }: { theme: Theme }) {
         on = next;
         if (reducedMotion) { lift = next ? 1 : 0; place(); return; }
         glide = { from: lift, to: next ? 1 : 0, t0: performance.now() };
+      },
+      light(code) {
+        const next = code && model ? model.states.findIndex((st) => st.code === code) : -1;
+        if (next !== hover) { hover = next; push(); }
+        setLit(code);
       },
     };
 
@@ -188,18 +196,12 @@ export function MapView({ theme }: { theme: Theme }) {
             <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.form === "strata" ? "Spikes" : "Terrain" }]} />
           </div>
         ) : null}
-        {tip ? (
-          <div className="tip" style={{ transform: `translate(${tip.x + 14}px, ${tip.y + 14}px)` }}>
-            <b>{tip.name}</b>
-            <span>{tip.value ? fmtMoney(tip.value) : "No recorded giving"}</span>
-          </div>
-        ) : null}
       </div>
       <aside className="map-side">
         <h4 className="sub-h">Largest donor states</h4>
         <ol className="rank">
           {top.map(([code, v]) => (
-            <li key={code}>
+            <li key={code} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
               <span className="num">{code}</span>
               <span className="rank-bar"><i style={{ width: `${(v / top[0][1]) * 100}%` }} /></span>
               <span className="num">{fmtMoney(v)}</span>

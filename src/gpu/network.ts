@@ -38,6 +38,7 @@ export interface NetModel {
   et: Uint32Array;
   etype: Uint8Array;
   ew: Float32Array;
+  ids: string[];
   names: (string | undefined)[];
   roles: (string | undefined)[];
   labels: number[];
@@ -198,6 +199,7 @@ export function buildCoreModel(layout: "force" | "orbit", form?: DeepSpace["form
     shape: Uint8Array.from(entities, (e) => KIND_SHAPE[e.kind]),
     sector: Uint8Array.from(entities, (e) => SECTORS.indexOf(e.sector)),
     hollow: Uint8Array.from(entities, (e) => (e.kind === "official" || e.kind === "agency" ? 1 : 0)),
+    ids: entities.map((e) => e.id),
     names: entities.map((e) => (e.name === e.id ? undefined : e.name)),
     roles: entities.map((e) => e.role),
     labels: entities.flatMap((e, i) => (e.label ? [i] : [])),
@@ -255,7 +257,7 @@ export function buildStressModel(n: number, form?: DeepSpace["form"]): NetModel 
   }
   return finish({
     n, m, x, y, radius, shape, sector, hollow, es, et, etype, ew,
-    names: [], roles: [], labels: [], focus: -1, rings: [], half: half * 1.12, dense: true,
+    ids: [], names: [], roles: [], labels: [], focus: -1, rings: [], half: half * 1.12, dense: true,
   }, form);
 }
 

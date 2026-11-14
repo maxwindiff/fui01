@@ -114,6 +114,7 @@ export class Scene {
     this.observer = new IntersectionObserver(([entry]) => {
       this.visible = entry.isIntersecting;
       this.dirty = true;
+      this.last = 0;
     });
     this.observer.observe(canvas);
     scenes.add(this);

@@ -5,11 +5,12 @@ import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/
 import type { NetModel } from "../gpu/network";
 import { rgba } from "../themes";
 import type { Theme } from "../themes";
-import { Glyph, Segmented } from "./primitives";
+import { Glyph, Segmented, usePanel } from "./primitives";
 import type { Kind, Sector } from "../data";
+import { useWorkspace } from "../workspace";
 
 type Density = "case" | "5k" | "100k";
-interface Readout { name: string; role?: string; ties: number }
+interface Readout { id?: string; name: string; role?: string; ties: number }
 interface Stats { n: number; m: number; segs: number }
 interface Pose { cam: Camera; lift: number }
 type Box = [number, number, number, number];
@@ -33,6 +34,8 @@ class NetController {
   private keepouts: Box[] = [];
   private ro: ResizeObserver;
   private fitted = false;
+  private fitW = 0;
+  private fitH = 0;
 
   constructor(
     gpu: Awaited<ReturnType<typeof getGpu>>, private canvas: HTMLCanvasElement, private labels: HTMLElement,
@@ -64,7 +67,11 @@ class NetController {
     this.ro = new ResizeObserver(() => {
       if (!this.model) return;
       this.measure();
+      const s = this.scene;
       if (!this.fitted) this.apply(this.pose(this.deepOn));
+      else if (s.width && (Math.abs(s.width - this.fitW) > 8 || Math.abs(s.height - this.fitH) > 8)) this.glide(this.pose(this.deepOn), 420);
+      this.fitW = s.width;
+      this.fitH = s.height;
       this.layout();
     });
     this.ro.observe(canvas);
@@ -122,10 +129,14 @@ class NetController {
     };
     const w = s.width || 800, h = s.height || 600;
     const fill = m.dense && !m.sheets.length ? 0.94 : deep ? 0.84 : 0.86;
+    // A ring layout is fitted to its outer circle, which is tighter than the bounding square once the view is turned.
+    const hull: [number, number][] = ringR
+      ? Array.from({ length: 24 }, (_, i) => [Math.cos((i / 24) * Math.PI * 2) * ringR, Math.sin((i / 24) * Math.PI * 2) * ringR])
+      : [[x0, y0], [x1, y0], [x0, y1], [x1, y1]];
     const extent = () => {
       const fr = s.frustum();
       let sx0 = Infinity, sx1 = -Infinity, sy0 = Infinity, sy1 = -Infinity;
-      for (const cx of [x0, x1]) for (const cy of [y0, y1]) for (const cz of [zLo, zHi]) {
+      for (const [cx, cy] of hull) for (const cz of [zLo, zHi]) {
         const [px, py] = s.project(cx, cy, cz, fr);
         sx0 = Math.min(sx0, px); sx1 = Math.max(sx1, px); sy0 = Math.min(sy0, py); sy1 = Math.max(sy1, py);
       }
@@ -157,6 +168,7 @@ class NetController {
     s.aperture = (this.deep?.aperture ?? 0) * p.lift;
     s.fogFloor = 1 - (1 - (this.deep?.fogFloor ?? 1)) * p.lift;
     this.restYaw = p.cam.yaw;
+    if (!this.fitted) { this.fitW = s.width; this.fitH = s.height; }
     this.fitted = true;
     s.dirty = true;
     this.layout();
@@ -242,8 +254,8 @@ class NetController {
         a.el.style.opacity = String(hits([sx, sy, sx + 150, sy + 22]) ? 0 : s.lift);
       }
     }
-    const order = m.labels.map((i, k) => k).sort((p, q) =>
-      (m.labels[q] === m.focus ? 1 : 0) - (m.labels[p] === m.focus ? 1 : 0) || m.radius[m.labels[q]] - m.radius[m.labels[p]]);
+    const rank = (k: number) => (m.labels[k] === this.selected ? 2 : m.labels[k] === m.focus ? 1 : 0);
+    const order = m.labels.map((i, k) => k).sort((p, q) => rank(q) - rank(p) || m.radius[m.labels[q]] - m.radius[m.labels[p]]);
     for (const k of order) {
       const el = this.labelEls[k];
       const { sx, sy } = at[k];
@@ -254,8 +266,9 @@ class NetController {
       const above: Box = [sx - lw / 2, sy - r - lh, sx + lw / 2, sy - r];
       const below: Box = [sx - lw / 2, sy + r, sx + lw / 2, sy + r + lh];
       const options = (m.rings.length ? sx < w / 2 : sx < w * 0.36) ? [left, right, above, below] : [right, left, above, below];
-      const spot = options.find((b) => b[0] > 2 && b[2] < w - 2 && b[1] > 2 && b[3] < h - 2 && !hits(b)) ?? (m.labels[k] === m.focus ? above : undefined);
+      const spot = options.find((b) => b[0] > 2 && b[2] < w - 2 && b[1] > 2 && b[3] < h - 2 && !hits(b)) ?? (rank(k) ? above : undefined);
       el.style.opacity = spot ? "1" : "0";
+      el.classList.toggle("sel", m.labels[k] === this.selected);
       if (!spot) continue;
       taken.push(spot);
       el.style.transform = `translate(${spot[0].toFixed(1)}px, ${spot[1].toFixed(1)}px)`;
@@ -319,15 +332,25 @@ class NetController {
     this.drag = null;
     if (!drag || drag.moved) return;
     const i = this.hit(e.offsetX, e.offsetY);
-    this.selected = i === this.selected ? -1 : i;
+    this.select(i === this.selected ? -1 : i);
+  };
+  select(i: number) {
+    if (i === this.selected) return;
+    this.selected = i;
     const m = this.model;
-    this.cb.select(this.selected < 0 ? null : {
-      name: m.names[this.selected] ?? `Entity ${this.selected.toLocaleString()}`,
-      role: m.roles[this.selected],
-      ties: m.adjStart[this.selected + 1] - m.adjStart[this.selected],
+    this.cb.select(i < 0 ? null : {
+      id: m.names[i] ? m.ids[i] : undefined,
+      name: m.names[i] ?? `Entity ${i.toLocaleString()}`,
+      role: m.roles[i],
+      ties: m.adjStart[i + 1] - m.adjStart[i],
     });
     this.rebuild();
-  };
+    this.layout();
+  }
+  selectId(id: string) {
+    const i = this.model.ids.indexOf(id);
+    if (i >= 0) this.select(i);
+  }
   private enter = () => { this.hovering = true; };
   private leave = () => { this.hovering = false; this.hoverEl.hidden = true; };
   private wheel = (e: WheelEvent) => {
@@ -364,8 +387,11 @@ export function NetworkView({ theme }: { theme: Theme }) {
   const hover = useRef<HTMLDivElement>(null);
   const ctl = useRef<NetController | null>(null);
   const deep = theme.gpu.deep;
+  const ws = useWorkspace();
+  const { staged } = usePanel();
+  const inspected = ws.trail[ws.trail.length - 1];
   const [density, setDensity] = useState<Density>("case");
-  const [space, setSpace] = useState<"flat" | "deep">(deep ? "deep" : "flat");
+  const [space, setSpace] = useState<"flat" | "deep">("deep");
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
   const [readout, setReadout] = useState<Readout | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -393,7 +419,15 @@ export function NetworkView({ theme }: { theme: Theme }) {
   useEffect(() => {
     ctl.current?.measure();
     ctl.current?.layout();
-  }, [readout, space, density]);
+  }, [readout, space, density, staged]);
+
+  // The dossier and the network follow one another while the dossier is open.
+  useEffect(() => {
+    if (inspected && status === "ready") ctl.current?.selectId(inspected);
+  }, [inspected, status]);
+  useEffect(() => {
+    if (readout?.id && ws.trail.length) ws.inspect(readout.id);
+  }, [readout]);
 
   const change = (d: Density) => {
     setDensity(d);
@@ -435,7 +469,11 @@ export function NetworkView({ theme }: { theme: Theme }) {
       </div>
       <div className="viz-bl" data-keepout>
         {readout ? (
-          <p className="readout"><b>{readout.name}</b><span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} direct ties shown, the rest dimmed.</span></p>
+          <p className="readout">
+            <b>{readout.name}</b>
+            <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} direct ties shown, the rest dimmed.</span>
+            {readout.id && inspected !== readout.id ? <button type="button" className="btn" onClick={() => ws.inspect(readout.id!)}>Open dossier</button> : null}
+          </p>
         ) : (
           <p className="readout"><span>{hint}</span></p>
         )}
