@@ -1,9 +1,10 @@
-import { clock, draw, frameLoop, init, storage, surface } from "vgpu";
+import { draw, frameLoop, init, storage, surface } from "vgpu";
 import type { Draw, Gpu, StorageBuffer, Surface } from "vgpu";
 import marksShader from "./shaders/marks.wgsl";
 import segsShader from "./shaders/segments.wgsl";
 import quadsShader from "./shaders/quads.wgsl";
 import type { RGBA } from "../themes";
+import { motion, onMotionChange } from "../motion";
 
 export const MARK_FLOATS = 16;
 export const SEG_FLOATS = 20;
@@ -60,17 +61,26 @@ export function getGpu(): Promise<Gpu> {
 }
 
 const scenes = new Set<Scene>();
-export const reducedMotion = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Set while a layout transition runs, so the views draw only when something changes.
+export const gpuState = { paused: false };
+export function wakeScenes() { for (const scene of scenes) scene.dirty = true; }
+onMotionChange(wakeScenes);
 
 function start(gpu: Gpu) {
-  const time = clock(gpu);
+  // Seconds of travel for dashes and pulses. The clock runs faster at the Lively level and stops below Standard.
+  let travel = 0;
+  let prev = performance.now();
   frameLoop(gpu, (frame) => {
     const now = performance.now();
+    const ambient = motion.level >= 2;
+    const moving = ambient && !gpuState.paused;
+    if (moving) travel += (Math.min(100, now - prev) / 1000) * (motion.level === 3 ? 1.6 : 1);
+    prev = now;
     for (const scene of scenes) {
       if (!scene.visible) continue;
       scene.tick(now);
-      if (!scene.dirty && !(scene.animated && !reducedMotion)) continue;
-      scene.encode(frame, reducedMotion ? 0 : time.time, now);
+      if (!scene.dirty && !(scene.animated && moving)) continue;
+      scene.encode(frame, ambient ? travel : 0, now);
     }
   });
 }
@@ -134,19 +144,24 @@ export class Scene {
   }
 
   playReveal(ms: number) {
-    if (reducedMotion || ms <= 0) { this.reveal = 1; return; }
+    if (motion.level < 2 || ms <= 0) { this.reveal = 1; this.revealMs = 0; this.dirty = true; return; }
     this.reveal = 0;
-    this.revealFrom = performance.now();
+    this.revealFrom = 0;
     this.revealMs = ms;
+    this.dirty = true;
   }
 
   tick(now: number) {
     const dt = this.lastTick ? Math.min(100, now - this.lastTick) : 16;
     this.lastTick = now;
     if (this.revealMs) {
-      const t = (now - this.revealFrom) / this.revealMs;
-      this.reveal = Math.min(1, t);
-      if (t >= 1) this.revealMs = 0;
+      // The reveal waits while the panel around the canvas is still hidden, then starts once its frame has begun to draw.
+      if (!this.revealFrom && !this.canvas.closest("[data-pending]")) this.revealFrom = now + 300;
+      if (this.revealFrom) {
+        const t = (now - this.revealFrom) / this.revealMs;
+        this.reveal = Math.max(0, Math.min(1, t));
+        if (t >= 1) this.revealMs = 0;
+      }
       this.dirty = true;
     }
     this.onTick?.(now, dt);

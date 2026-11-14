@@ -1,0 +1,17 @@
+export const PANEL_TITLES: Record<string, string> = {
+  "01": "Relationship network",
+  "02": "Person",
+  "03": "Political affiliation",
+  "04": "Giving by state",
+  "05": "Timeline and career history",
+  "06": "Money flow",
+  "07": "Lobbying spend by quarter",
+  "08": "Share of giving by recipient",
+  "09": "Contacts by office, per month",
+  "10": "Lobbying filings",
+  "11": "Finding",
+  "12": "Document",
+  "13": "Documents",
+  "14": "Controls",
+  "15": "Motion and interaction",
+};

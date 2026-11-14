@@ -21,22 +21,13 @@ export function Inspector() {
   return (
     <aside className="inspector" aria-label="Dossier">
       <header className="insp-h">
-        <ol className="trail">
-          {ws.trail.map((t, i) => (
-            <li key={`${t}${i}`}>
-              {i < ws.trail.length - 1
-                ? <button type="button" onClick={() => ws.jump(i)} data-tip={`Back to ${entity(t)!.name}`}>{entity(t)!.name}</button>
-                : <span aria-current="true">{entity(t)!.name}</span>}
-            </li>
-          ))}
-        </ol>
+        <p className="insp-kind"><Glyph kind={d.e.kind} sector={d.e.sector} size={15} />{d.e.sector === "gov" ? "Government" : d.e.sector === "corp" ? "Company side" : d.e.sector === "inter" ? "Intermediary" : "Event"}</p>
         <button type="button" className="panel-x" aria-label="Close the dossier" data-tip="Close (Esc)" onClick={ws.closeInspector}>
           <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9" /></svg>
         </button>
       </header>
       <div className="insp-b" ref={body}>
         <div className="insp-page" key={id}>
-          <p className="insp-kind"><Glyph kind={d.e.kind} sector={d.e.sector} size={15} />{d.e.sector === "gov" ? "Government" : d.e.sector === "corp" ? "Company side" : d.e.sector === "inter" ? "Intermediary" : "Event"}</p>
           <h3 className="person-name" tabIndex={-1}>{d.e.name}</h3>
           {d.e.role ? <p className="person-role">{d.e.role}</p> : null}
           {d.e.party ? <div className="tags"><PartyChip party={d.e.party} long /></div> : null}
@@ -61,7 +52,7 @@ export function Inspector() {
                   </li>
                 ))}
               </ol>
-              {g.minor ? <p className="sub">{g.rows.length ? "and " : ""}{g.minor} minor {g.minor === 1 ? "tie" : "ties"} to background entities</p> : null}
+              {g.minor ? <p className="sub">{g.rows.length ? "+" : ""}{g.minor} minor</p> : null}
             </section>
           ))}
           {d.docs.length ? (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getGpu, reducedMotion, Scene, TOP_DOWN } from "../gpu/scene";
+import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
+import { motion } from "../motion";
 import type { Camera } from "../gpu/scene";
 import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/network";
 import type { NetModel } from "../gpu/network";
@@ -7,7 +8,7 @@ import { rgba } from "../themes";
 import type { Theme } from "../themes";
 import { Glyph, Segmented, usePanel } from "./primitives";
 import type { Kind, Sector } from "../data";
-import { useWorkspace } from "../workspace";
+import { useWs, ws } from "../workspace";
 
 type Density = "case" | "5k" | "100k";
 interface Readout { id?: string; name: string; role?: string; ties: number }
@@ -69,7 +70,11 @@ class NetController {
       this.measure();
       const s = this.scene;
       if (!this.fitted) this.apply(this.pose(this.deepOn));
-      else if (s.width && (Math.abs(s.width - this.fitW) > 8 || Math.abs(s.height - this.fitH) > 8)) this.glide(this.pose(this.deepOn), 420);
+      else if (s.width && (Math.abs(s.width - this.fitW) > 8 || Math.abs(s.height - this.fitH) > 8)) {
+        // A layout transition is already moving the frame, so the camera settles in place.
+        if (gpuState.paused) this.apply(this.pose(this.deepOn));
+        else this.glide(this.pose(this.deepOn), 420);
+      }
       this.fitW = s.width;
       this.fitH = s.height;
       this.layout();
@@ -184,7 +189,7 @@ class NetController {
   }
 
   private glide(to: Pose, ms: number) {
-    if (reducedMotion) { this.apply(to); return; }
+    if (motion.level === 0) { this.apply(to); return; }
     this.tween = { from: { cam: { ...this.scene.cam }, lift: this.scene.lift }, to, t0: performance.now(), ms };
   }
 
@@ -217,9 +222,9 @@ class NetController {
       if (t >= 1) this.tween = null;
       return;
     }
-    if (!this.deep || !this.deepOn || this.hovering || this.drag || reducedMotion) return;
+    if (!this.deep || !this.deepOn || this.hovering || this.drag || motion.level < 2) return;
     this.idle += dt / 1000;
-    s.cam.yaw = this.restYaw + this.deep.sway * Math.sin((this.idle / this.deep.swayPeriod) * Math.PI * 2);
+    s.cam.yaw = this.restYaw + this.deep.sway * (motion.level === 3 ? 1.8 : 1) * Math.sin((this.idle / this.deep.swayPeriod) * Math.PI * 2);
     this.layout();
   };
 
@@ -387,9 +392,9 @@ export function NetworkView({ theme }: { theme: Theme }) {
   const hover = useRef<HTMLDivElement>(null);
   const ctl = useRef<NetController | null>(null);
   const deep = theme.gpu.deep;
-  const ws = useWorkspace();
   const { staged } = usePanel();
-  const inspected = ws.trail[ws.trail.length - 1];
+  const inspected = useWs((s) => s.trail[s.trail.length - 1]);
+  const replays = useWs((s) => s.replays);
   const [density, setDensity] = useState<Density>("case");
   const [space, setSpace] = useState<"flat" | "deep">("deep");
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
@@ -421,12 +426,16 @@ export function NetworkView({ theme }: { theme: Theme }) {
     ctl.current?.layout();
   }, [readout, space, density, staged]);
 
+  useEffect(() => {
+    if (replays) ctl.current?.scene.playReveal(theme.motion.reveal);
+  }, [replays]);
+
   // The dossier and the network follow one another while the dossier is open.
   useEffect(() => {
     if (inspected && status === "ready") ctl.current?.selectId(inspected);
   }, [inspected, status]);
   useEffect(() => {
-    if (readout?.id && ws.trail.length) ws.inspect(readout.id);
+    if (readout?.id && inspected) ws.inspect(readout.id);
   }, [readout]);
 
   const change = (d: Density) => {
@@ -437,9 +446,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
     setSpace(v);
     ctl.current?.setDeep(v === "deep");
   };
-  const hint = deep && space === "deep"
-    ? "Select a node to isolate its ties. Drag to turn, Shift-drag to pan, pinch or Ctrl-scroll to zoom."
-    : "Select a node to isolate its ties. Drag to pan, pinch or Ctrl-scroll to zoom.";
 
   return (
     <div className="viz net" data-dense={density !== "case"}>
@@ -456,27 +462,25 @@ export function NetworkView({ theme }: { theme: Theme }) {
         ))}
         <li className="key-line money"><i />Money</li>
         <li className="key-line contact"><i />Contact</li>
-        {deep?.form === "armillary" ? <li className="key-line stem"><i />Stem height is weight in the case</li> : null}
+        {deep?.form === "armillary" ? <li className="key-line stem"><i />Stem height is weight</li> : null}
       </ul>
       <div className="viz-tr" data-keepout>
-        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0] }, { value: "deep", label: deep.labels[1] }]} /> : null}
+        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan" }]} /> : null}
         <Segmented label="Graph size" value={density} onChange={change} options={[{ value: "case", label: "Case file" }, { value: "5k", label: "5,000" }, { value: "100k", label: "100,000" }]} />
         <div className="viz-zoom">
-          <button type="button" aria-label="Zoom in" onClick={() => ctl.current?.zoom(1.35)}>+</button>
+          <button type="button" aria-label="Zoom in" data-tip="Zoom in (Ctrl-scroll)" onClick={() => ctl.current?.zoom(1.35)}>+</button>
           <button type="button" aria-label="Zoom out" onClick={() => ctl.current?.zoom(1 / 1.35)}>&minus;</button>
-          <button type="button" className="wide" onClick={() => ctl.current?.fit()}>Fit</button>
+          <button type="button" className="wide" data-tip="Fit to view" onClick={() => ctl.current?.fit()}>Fit</button>
         </div>
       </div>
       <div className="viz-bl" data-keepout>
         {readout ? (
           <p className="readout">
             <b>{readout.name}</b>
-            <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} direct ties shown, the rest dimmed.</span>
+            <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} ties</span>
             {readout.id && inspected !== readout.id ? <button type="button" className="btn" onClick={() => ws.inspect(readout.id!)}>Open dossier</button> : null}
           </p>
-        ) : (
-          <p className="readout"><span>{hint}</span></p>
-        )}
+        ) : null}
       </div>
       <dl className="viz-br" data-keepout>
         {stats ? (

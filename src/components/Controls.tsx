@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Glyph, PartyChip, Segmented, Spark } from "./primitives";
+import { Count, Glyph, PartyChip, Segmented, Spark } from "./primitives";
 import type { Kind, Sector } from "../data";
 import { DOCS, entity, FILINGS, fmtMoney, GRAPH, named, SPARK_CONTACTS, SPARK_MONEY, SPEND_HALVORSEN } from "../data";
-import { useWorkspace } from "../workspace";
+import { ws } from "../workspace";
 
 interface Hit { key: string; group: string; label: string; sub: string; glyph?: { kind: Kind; sector: Sector }; open: () => void }
 
 function Search() {
-  const ws = useWorkspace();
   const [q, setQ] = useState("voss");
   const [open, setOpen] = useState(false);
   const [mark, setMark] = useState(0);
@@ -57,7 +56,7 @@ function Search() {
       </label>
       {open && needle ? (
         <ul className="results" id="search-results" role="listbox">
-          {hits.length === 0 ? <li className="results-none">Nothing in this case matches. Try a name, a firm or a filing number.</li> : null}
+          {hits.length === 0 ? <li className="results-none">No match</li> : null}
           {hits.map((h, k) => (
             <li key={h.key} role="option" aria-selected={k === mark} className={k === mark ? "on" : ""} onPointerEnter={() => setMark(k)} onPointerDown={(e) => { e.preventDefault(); choose(h); }}>
               {hits[k - 1]?.group !== h.group ? <span className="results-g">{h.group}</span> : <span />}
@@ -67,9 +66,7 @@ function Search() {
           ))}
         </ul>
       ) : null}
-      <p className="note">
-        {needle ? `${count("Entities")} entities, ${count("Documents")} documents and ${count("Filings")} filings match.` : "Press / from anywhere on the board to search."}
-      </p>
+      {needle ? <p className="note">{count("Entities")} entities, {count("Documents")} documents, {count("Filings")} filings</p> : null}
     </div>
   );
 }
@@ -162,9 +159,9 @@ export function Controls() {
       <section>
         <h4 className="sub-h">Readouts</h4>
         <dl className="readouts">
-          <div><dt>Lobbying, 2025</dt><dd><b>$9.39M</b><Spark data={SPEND_HALVORSEN.slice(8)} w={72} /></dd></div>
-          <div><dt>To subcommittee</dt><dd><b>$2.71M</b><Spark data={SPARK_MONEY} kind="bar" w={72} /></dd></div>
-          <div><dt>Contacts logged</dt><dd><b>214</b><Spark data={SPARK_CONTACTS} w={72} /></dd></div>
+          <div><dt>Lobbying, 2025</dt><dd><b><Count to={9390} fmt={fmtMoney} /></b><Spark data={SPEND_HALVORSEN.slice(8)} w={72} /></dd></div>
+          <div><dt>To subcommittee</dt><dd><b><Count to={2710} fmt={fmtMoney} /></b><Spark data={SPARK_MONEY} kind="bar" w={72} /></dd></div>
+          <div><dt>Contacts logged</dt><dd><b><Count to={214} /></b><Spark data={SPARK_CONTACTS} w={72} /></dd></div>
         </dl>
         <div className="tip static" role="tooltip">
           <b>Liberty Orbit Fund</b>

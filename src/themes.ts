@@ -24,7 +24,6 @@ export interface Motion {
   expand: number;
   sort: number;
   ease: string;
-  character: string;
   notes: { name: string; what: string; timing: string }[];
 }
 
@@ -196,14 +195,12 @@ const vellum: Theme = {
     expand: 220,
     sort: 320,
     ease: "cubic-bezier(0.2, 0.7, 0.1, 1)",
-    character:
-      "A frame changes size like a mask over a drawing. Its contents keep their scale while the frame crops or uncovers them, and a new sheet slides in from the edge it belongs to.",
     notes: [
-      { name: "Plot in", what: "Each frame wipes in from the left as if a pen plotter drew it. Chart lines draw along their own length and bars rise from the baseline.", timing: "520 ms a panel, 45 ms apart" },
-      { name: "Ink ties", what: "Network ties and state borders draw from source to target, then the nodes appear.", timing: "1.5 s, drawn on the GPU" },
-      { name: "Pull apart", what: "Switching between Flat and Strata separates the three sheets and tips the camera in a single move, so each node keeps its place.", timing: "1.1 s, ease in and out" },
-      { name: "Drift", what: "At rest the stack sways a few degrees so depth reads through parallax, and sheets away from the focal plane soften. The sway stops while the pointer is over the view.", timing: "26 s a cycle" },
-      { name: "Money", what: "Dashes march along money ties, down or up through the sheets in the direction the money moved.", timing: "0.9 dash lengths a second" },
+      { name: "Plot in", what: "Frames wipe in from the left when they come into view. Lines draw, bars rise left to right, and the money flow wipes from sources to recipients.", timing: "520 ms a panel, 45 ms apart" },
+      { name: "Ink ties", what: "Network ties and state borders draw from source to target.", timing: "1.5 s, on the GPU" },
+      { name: "Pull apart", what: "Flat to Strata separates the sheets and tips the camera in one move.", timing: "1.1 s" },
+      { name: "Drift", what: "The stack sways slowly and stops under the pointer.", timing: "26 s a cycle" },
+      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -337,14 +334,12 @@ const orrery: Theme = {
     expand: 320,
     sort: 460,
     ease: "cubic-bezier(0.3, 0, 0.1, 1)",
-    character:
-      "A plate glides to its new place and settles. Its rim glows for a moment on arrival and the tick scale under its title sweeps across again.",
     notes: [
-      { name: "Wind up", what: "Each plate fades up while the tick scale under its title sweeps from left to right. Chart lines draw along their own length.", timing: "700 ms a panel, 60 ms apart" },
-      { name: "Sweep", what: "Rings sweep round from twelve o'clock, innermost first, and nodes light as their ring arrives.", timing: "2.2 s, drawn on the GPU" },
-      { name: "Lift off", what: "Switching between Plan and Armillary raises every stem from the ring it stands on and tips the camera in a single move.", timing: "1.4 s, ease in and out" },
-      { name: "Turn", what: "At rest the instrument swings slowly through a third of a turn and back while the tick scales turn against it. Both stop while the pointer is over the view.", timing: "48 s a cycle" },
-      { name: "Money", what: "Pulses travel along the arcs overhead in the direction the money moved.", timing: "one pulse every 4 to 6 s" },
+      { name: "Wind up", what: "Plates fade up as they come into view while the tick scale under each title sweeps across. Lines draw and the money flow wipes from sources to recipients.", timing: "700 ms a panel, 60 ms apart" },
+      { name: "Sweep", what: "Rings sweep round from twelve o'clock and nodes light as their ring arrives.", timing: "2.2 s, on the GPU" },
+      { name: "Lift off", what: "Plan to Armillary raises every stem off its ring and tips the camera in one move.", timing: "1.4 s" },
+      { name: "Turn", what: "The instrument swings slowly while tick scales turn against it. Both stop under the pointer.", timing: "48 s a cycle" },
+      { name: "Money", what: "Pulses travel along arcs and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
     ],
   },
 };
@@ -361,49 +356,12 @@ export interface Interaction {
 
 // `run` is a command the app shell carries out when the reader presses the button beside the entry.
 export const INTERACTIONS: Interaction[] = [
-  {
-    name: "Tooltip",
-    what: "A data mark answers the pointer at once and the readout snaps to the nearest value. Labels, codes and icon buttons wait a third of a second, and after the first one opens the next ones open without the wait. An entity name shows a card.",
-    timing: (m) => `0 ms on data, 350 ms on labels, ${m.hover} ms to fade`,
-  },
-  {
-    name: "Open a row",
-    what: "A filing or a document in a list opens in place and moves the later rows down. The opened part carries its own actions.",
-    timing: (m) => `${m.expand} ms`,
-    action: { label: "Open a filing", run: "filing" },
-  },
-  {
-    name: "Sort",
-    what: "A column heading sorts by that column and a second press reverses the order. Each row travels to its new place, so the eye can follow one of them.",
-    timing: (m) => `${m.sort} ms, rows 14 ms apart`,
-    action: { label: "Sort by amount", run: "sort" },
-  },
-  {
-    name: "Full size",
-    what: "The corner button puts a panel on a stage. The other panels fold to tiles in a rail at the side, each with a line of summary, and choosing a tile swaps it onto the stage. Escape returns to the board.",
-    timing: (m) => `${m.layout} ms`,
-    action: { label: "Stage the network", run: "stage" },
-  },
-  {
-    name: "Dossier",
-    what: "An entity name anywhere opens its dossier in a drawer on the right. The board narrows to make room and the network isolates the same entity. Names inside the dossier lead on, and a trail leads back.",
-    timing: (m) => `${m.layout} ms`,
-    action: { label: "Open Petra Voss", run: "dossier" },
-  },
-  {
-    name: "Linked marks",
-    what: "Pointing at a month in the small multiples reads that month in all six. Pointing at a recipient in the money flow traces its money back to the sources. A footnote number and its margin note light together, and a state in the ranked list lights on the map.",
-    timing: () => "0 ms",
-  },
-  {
-    name: "Measure",
-    what: "Dragging across the timeline marks a window and counts the contacts, gifts and events inside it.",
-    timing: () => "follows the pointer",
-    action: { label: "Measure the 90 days", run: "brush" },
-  },
-  {
-    name: "Commit",
-    what: "Add to brief turns the button to its done state and the count in the top bar steps up. Dismiss folds a finding to one line with an undo.",
-    timing: (m) => `${m.expand} ms`,
-  },
+  { name: "Tooltip", what: "Data marks answer at once. Labels and icon buttons wait a third of a second, then the next ones open without waiting.", timing: (m) => `0 to 350 ms, fade ${m.hover} ms` },
+  { name: "Open a row", what: "Rows open in place and move the later rows down.", timing: (m) => `${m.expand} ms`, action: { label: "Open a filing", run: "filing" } },
+  { name: "Sort", what: "Rows travel to their new places so one can be followed.", timing: (m) => `${m.sort} ms, rows 14 ms apart`, action: { label: "Sort by amount", run: "sort" } },
+  { name: "Full size", what: "A panel takes the stage and the rest fold to tiles in a rail.", timing: (m) => `${m.layout} ms`, action: { label: "Stage the network", run: "stage" } },
+  { name: "Dossier", what: "An entity name opens its dossier in a drawer and the board narrows to make room.", timing: (m) => `${m.layout} ms`, action: { label: "Open Petra Voss", run: "dossier" } },
+  { name: "Linked marks", what: "Pointing at a mark lights its counterparts elsewhere.", timing: () => "0 ms" },
+  { name: "Measure", what: "Dragging across the timeline counts what falls inside.", timing: () => "follows the pointer", action: { label: "Measure the 90 days", run: "brush" } },
+  { name: "Commit", what: "Add to brief steps the count in the top bar.", timing: (m) => `${m.expand} ms` },
 ];

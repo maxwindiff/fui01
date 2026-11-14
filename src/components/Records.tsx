@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { DOCS, entity, FILINGS, filingDetail, PRIOR_CONTACTS, WINDOW_CONTACTS, fmtMoney } from "../data";
 import type { Filing } from "../data";
-import { useCommand, useWorkspace } from "../workspace";
+import { useCommand, useWs, ws } from "../workspace";
 import { Ent, Fold, useFlip } from "./primitives";
 
 type SortKey = "q" | "reg" | "lob" | "amt";
@@ -15,11 +15,11 @@ const COLUMNS: { key?: SortKey; label: string; r?: boolean; first: 1 | -1 }[] = 
 ];
 
 function FilingDetail({ f }: { f: Filing }) {
-  const ws = useWorkspace();
+  const brief = useWs((s) => s.brief);
   const d = filingDetail(f);
   const max = Math.max(...d.series.map((g) => g.amt));
   const item = `Filing ${f.id}`;
-  const inBrief = ws.brief.includes(item);
+  const inBrief = brief.includes(item);
   return (
     <div className="gt-detail">
       <section>
@@ -102,7 +102,7 @@ export function FilingsTable() {
       {rows.map((f) => {
         const isOpen = open.has(f.id);
         return (
-          <div key={f.id} className={`gt-item${f.focus ? " sel" : ""}`} data-flip={f.id} data-open={isOpen}>
+          <div key={f.id} className={`gt-item${f.focus ? " sel" : ""}`} style={{ ["--k" as string]: FILINGS.indexOf(f) * 2 }} data-flip={f.id} data-open={isOpen}>
             <div
               className="gt-row" role="row" tabIndex={0} aria-expanded={isOpen}
               onClick={() => toggle(f.id)}
@@ -125,7 +125,7 @@ export function FilingsTable() {
           </div>
         );
       })}
-      <p className="gt-foot">Filled marks are lobbyists who held a federal post in the previous five years. Select a row for the names.</p>
+      <p className="gt-foot">Filled: held a federal post in the last five years.</p>
     </div>
   );
 }
@@ -184,7 +184,7 @@ function Email() {
 }
 
 export function DocViewer() {
-  const { doc } = useWorkspace();
+  const doc = useWs((s) => s.doc);
   const d = DOCS.find((x) => x.id === doc)!;
   return (
     <article className="doc" key={doc}>
@@ -208,7 +208,7 @@ export function DocViewer() {
           <div className="doc-cols">
             <div className="doc-body">{d.excerpt.map((p, i) => <p key={i}>{p}</p>)}</div>
             <ol className="doc-notes">
-              <li className="plain">No notes on this document yet. {d.ents} entities were recognised in it, {d.about.length} of them in this case.</li>
+              <li className="plain">{d.ents} entities recognised, {d.about.length} in this case.</li>
             </ol>
           </div>
         </>
@@ -218,12 +218,12 @@ export function DocViewer() {
 }
 
 export function DocList() {
-  const ws = useWorkspace();
+  const current = useWs((s) => s.doc);
   const [open, setOpen] = useState<string | null>(null);
   return (
     <ul className="doclist">
       {DOCS.map((d) => (
-        <li key={d.id} className={d.id === ws.doc ? "sel" : ""} data-open={open === d.id}>
+        <li key={d.id} className={d.id === current ? "sel" : ""} style={{ ["--k" as string]: DOCS.indexOf(d) * 2 }} data-open={open === d.id}>
           <button type="button" className="doc-row" aria-expanded={open === d.id} onClick={() => setOpen(open === d.id ? null : d.id)}>
             <span className="doctype">{d.type}</span>
             <span className="doc-title">{d.title}</span>
@@ -241,7 +241,7 @@ export function DocList() {
                 {d.about.slice(0, 4).map((id) => { const e = entity(id)!; return <Ent key={id} kind={e.kind} sector={e.sector} id={id}>{e.name}</Ent>; })}
               </div>
               <div className="actions">
-                <button type="button" className="btn" disabled={d.id === ws.doc} onClick={() => ws.openDoc(d.id)}>{d.id === ws.doc ? "Shown in the document panel" : "Open document"}</button>
+                <button type="button" className="btn" disabled={d.id === current} onClick={() => ws.openDoc(d.id)}>{d.id === current ? "Shown in the document panel" : "Open document"}</button>
               </div>
             </div>
           </Fold>
@@ -259,11 +259,11 @@ const EVIDENCE = [
 ];
 
 export function Finding() {
-  const ws = useWorkspace();
+  const brief = useWs((s) => s.brief);
   const [evidence, setEvidence] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const item = "Finding 3";
-  const inBrief = ws.brief.includes(item);
+  const inBrief = brief.includes(item);
   return (
     <div className="finding" data-dismissed={dismissed}>
       <p className="finding-n">

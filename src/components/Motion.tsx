@@ -13,12 +13,11 @@ export function MotionSheet({ theme, onReplay, onRun }: { theme: Theme; onReplay
           <path className="c-rule" d={`M0 ${S}L${S} 0`} />
           <path className="c-line" pathLength={1} d={`M0 ${S}C${x1 * S} ${S - y1 * S} ${x2 * S} ${S - y2 * S} ${S} 0`} />
         </svg>
-        <p className="note">Shared easing. Entries take {m.enter} ms a panel, {m.stagger} ms apart. Changes of layout take {m.layout} ms.</p>
-        <p className="note">{m.character}</p>
+        <p className="note">Entry {m.enter} ms, layout {m.layout} ms, response {m.hover} ms</p>
         <button type="button" className="btn" onClick={onReplay}>Replay entry</button>
       </div>
       <div>
-        <h4 className="sub-h">On entry and at rest</h4>
+        <h4 className="sub-h">Entry and rest</h4>
         <dl className="motion-list">
           {m.notes.map((n) => (
             <div key={n.name}>
@@ -28,7 +27,7 @@ export function MotionSheet({ theme, onReplay, onRun }: { theme: Theme; onReplay
             </div>
           ))}
         </dl>
-        <h4 className="sub-h">In answer to the reader</h4>
+        <h4 className="sub-h">Response</h4>
         <dl className="motion-list">
           {INTERACTIONS.map((n) => (
             <div key={n.name}>

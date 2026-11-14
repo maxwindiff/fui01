@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
 import { FLOW_NODES, FLOWS, MULTIPLES, MULTIPLES_T0, QUARTERS, SLOPE, SPEND_HALVORSEN, SPEND_NOTES, SPEND_PEER_HI, SPEND_PEER_LO, SPEND_PEER_MED, fmtMoney } from "../data";
 import { tip, TipRow } from "../tip";
-import { useWorkspace } from "../workspace";
+import { ws } from "../workspace";
 import { usePanel, useSize } from "./primitives";
 
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -63,7 +63,7 @@ export function SpendChart() {
           })}
           <path className="c-line bold" pathLength={1} d={line(SPEND_HALVORSEN)} />
           {SPEND_HALVORSEN.map((v, i) => (
-            <circle key={i} className={i === peak ? "c-dot peak" : "c-dot"} cx={x(i)} cy={y(v)} r={i === peak ? 3.4 : 1.7} />
+            <circle key={i} style={{ ["--k" as string]: i }} className={i === peak ? "c-dot peak" : "c-dot"} cx={x(i)} cy={y(v)} r={i === peak ? 3.4 : 1.7} />
           ))}
           <text className="c-label strong" x={x(peak)} y={y(SPEND_HALVORSEN[peak]) - 10} textAnchor="middle">{fmtMoney(SPEND_HALVORSEN[peak])}</text>
           <text className="c-label strong" x={x(n - 1) + 9} y={y(SPEND_HALVORSEN[n - 1]) + 1}>Halvorsen</text>
@@ -151,10 +151,10 @@ export function Multiples() {
             <span>{m.name}</span>
             {at >= 0 ? <span className="mult-at"><span className="dim">{month(at)}</span><b className="num">{m.data[at]}</b></span> : <b className="num">{m.data.reduce((a, v) => a + v, 0)}</b>}
           </figcaption>
-          <svg viewBox={`0 0 ${len * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true" onPointerMove={move} onPointerLeave={() => setAt(-1)}>
+          <svg className="wipe" viewBox={`0 0 ${len * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true" onPointerMove={move} onPointerLeave={() => setAt(-1)}>
             {at >= 0 ? <rect className="mult-col" x={at * 4} y={0} width={4} height={max} /> : null}
             {m.data.map((v, i) => (
-              <rect key={i} className={`mult${i >= 10 && i <= 12 ? " key" : ""}${i === at ? " at" : ""}`} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
+              <rect key={i} style={{ ["--k" as string]: i }} className={`mult${i >= 10 && i <= 12 ? " key" : ""}${i === at ? " at" : ""}`} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
             ))}
           </svg>
         </figure>
@@ -182,7 +182,6 @@ function trace(start: string[], dir: "up" | "down", found = new Set<number>()) {
 export function MoneyFlow() {
   const [ref, { w }] = useSize<HTMLDivElement>();
   const { staged } = usePanel();
-  const ws = useWorkspace();
   const [lit, setLit] = useState<Set<number> | null>(null);
   const H = staged ? 620 : 380, top = 46, nodeW = 9, gap = [16, 30, 12];
   const lm = 150, rm = 168;
@@ -216,6 +215,7 @@ export function MoneyFlow() {
         f, i,
         hot: hot.has(f.t),
         d: `M${x0} ${y0}C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}V${y1 + h}C${mx} ${y1 + h} ${mx} ${y0 + h} ${x0} ${y0 + h}Z`,
+        mid: `M${x0} ${y0 + h / 2}C${mx} ${y0 + h / 2} ${mx} ${y1 + h / 2} ${x1} ${y1 + h / 2}`,
       };
     });
   const nodeLit = (id: string) => !lit || FLOWS.some((f, i) => lit.has(i) && (f.s === id || f.t === id));
@@ -224,9 +224,13 @@ export function MoneyFlow() {
     <div ref={ref} className="chart flow">
       {w > 0 ? (
         <svg width={w} height={H} data-probing={lit !== null} role="img" aria-label="Money flow from four sources through four vehicles to seven recipients, 2024 cycle">
+          <defs>
+            <clipPath id="flow-wipe"><rect className="flow-wipe" x="0" y="0" width={w} height={H} /></clipPath>
+          </defs>
           {["Source", "Vehicle", "Recipient"].map((label, c) => (
-            <text key={label} className="c-label" x={c === 0 ? xs[0] + nodeW : c === 1 ? xs[1] : xs[2]} y={11} textAnchor={c === 0 ? "end" : "start"}>{label}</text>
+            <text key={label} className="c-label flow-head" style={{ ["--col" as string]: c }} x={c === 0 ? xs[0] + nodeW : c === 1 ? xs[1] : xs[2]} y={11} textAnchor={c === 0 ? "end" : "start"}>{label}</text>
           ))}
+          <g clipPath="url(#flow-wipe)">
           {ribbons.map((rb) => (
             <path
               key={rb.i} className={`ribbon${rb.hot ? " hot" : ""}${lit?.has(rb.i) ? " on" : ""}`} d={rb.d}
@@ -241,12 +245,17 @@ export function MoneyFlow() {
               onPointerLeave={leave}
             />
           ))}
+          {ribbons.map((rb) => (
+            <path key={`s${rb.i}`} className={`flow-stream${rb.hot ? " hot" : ""}${lit?.has(rb.i) ? " on" : ""}`} d={rb.mid} />
+          ))}
+          </g>
           {FLOW_NODES.map((nd) => {
             const bx = box.get(nd.id)!;
             const v = value(nd.id);
             return (
               <g
                 key={nd.id} className={`flow-node sec-${nd.sector}${hot.has(nd.id) ? " hot" : ""}${nodeLit(nd.id) ? "" : " off"}${nd.ent ? " link" : ""}`}
+                style={{ ["--col" as string]: nd.col }}
                 onPointerEnter={(e) => {
                   setLit(trace([nd.id], "down", trace([nd.id], "up")));
                   tip.show(e.currentTarget.querySelector("rect")!, (
@@ -254,7 +263,6 @@ export function MoneyFlow() {
                       <b>{nd.name}</b>
                       {nd.col > 0 ? <TipRow k="Received" v={fmtMoney(total(nd.id, "t"))} /> : null}
                       {nd.col < 2 ? <TipRow k="Paid out" v={fmtMoney(total(nd.id, "s"))} /> : null}
-                      {nd.ent ? <span className="tip-foot">Select to open the dossier.</span> : null}
                     </>
                   ));
                 }}

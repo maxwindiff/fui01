@@ -70,19 +70,34 @@ The production build is 184 kB of JavaScript after gzip, plus 31 kB for the stat
 
 ## Motion
 
-Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it with a Replay button. The rules behind it:
+The top bar has four motion levels, kept in `localStorage` and defaulting to Still when the system asks for reduced motion.
 
-- Entry happens once, when a board mounts. Panels arrive in reading order, chart lines draw along their length, and the GPU views reveal ties from source to target. After about four seconds the board drops its `data-entering` attribute, so content shown again later appears without the entry animation.
-- At rest the only movement is money: dashes or pulses travelling in the direction the money moved. The GPU views add a slow sway so depth reads through parallax, and the sway stops while the pointer is over the view.
-- Changes of arrangement keep every node on screen and move the camera and the heights together.
-- `prefers-reduced-motion` turns off entry, sway, travel and layout transitions.
+| Level | What moves |
+|---|---|
+| Still | Nothing. Every change shows at once. |
+| Quiet | Responses only: layout transitions, rows opening, sorted rows travelling, the camera gliding. |
+| Standard | Adds entry. A panel draws itself when it first comes into view or onto the stage, money travels along its ties, and the 3D views sway slowly. |
+| Lively | Adds movement at rest and on return. Money streams through the money flow, key marks pulse, figures count up, the sway widens, and a panel draws itself again each time it comes back into view. |
+
+Changing level replays the entry of the panels on screen, so the levels can be compared on the spot. `motion.ts` holds the level. CSS reads it from `data-motion`, `data-entry` and `data-ambient` on the root, and the GPU code reads `motion.level`.
+
+Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it. Entry is built like this:
+
+- `Panel` watches itself with one shared `IntersectionObserver`. A panel stays hidden (`data-pending`) until it comes into view, then plays its frame animation once (`data-enter="frame"`). Panels that arrive together are staggered by their order in the batch.
+- A panel that goes onto the stage plays only its content (`data-enter="content"`), after the layout transition has finished.
+- The observer reports a panel as hidden while its own entry clips it to nothing, so the panel's box decides whether it is on screen.
+- Dense charts (timeline, small multiples, the vote strip) wipe in as one piece with a `clip-path`. The money flow wipes from sources to recipients with a clip path on its ribbons, and each column lights as the wipe reaches it.
+- Elements take a `--k` index for left-to-right stagger. `Count` counts a figure up at the Lively level.
+- The GPU views start their reveal once the panel around them is no longer pending.
+- At rest the only movement at Standard is money: dashes or pulses in the direction it moved. The 3D views sway, and the sway stops while the pointer is over the view.
 
 ## Interaction
 
-The last panel also lists the interaction patterns, with a button beside most of them that carries the pattern out. Each pattern is built once and reused.
+The last panel also lists the interaction patterns, with a button beside most of them that carries the pattern out.
 
 | Pattern | Where to try it | How it is built |
 |---|---|---|
+| Breadcrumb | Top bar | `Crumbs.tsx` reads the workspace: the case, the staged panel (or the panel under the middle of the viewport while the board scrolls), then the dossier trail. Each segment goes back to that level. |
 | Tooltip | Any chart, entity name, issue code or icon button | `tip.tsx` holds one tooltip for the page. A chart calls `tip.show` with a point and gets an immediate readout. Any element with a `data-tip` attribute gets a text tooltip after 350 ms, and the wait is skipped for 600 ms after a tooltip closes. |
 | Open a row | Filings table, document list, Open evidence on the finding | `Fold` animates a grid row from `0fr` to `1fr`, which leaves the height to CSS. |
 | Sort | Column headings of the filings table | `useFlip` records each row's position before the reorder and plays a transform from the old position to the new one. |
@@ -90,20 +105,29 @@ The last panel also lists the interaction patterns, with a button beside most of
 | Dossier | Any underlined entity name, a network node, a node in the money flow | `Inspector.tsx` is a drawer fixed to the right edge. The shell pads its right side by the drawer's width, and a container query moves a column from the wide panel of each pair to the narrow one when the board gets tight. |
 | Linked marks | Small multiples, money flow, footnotes in the document, ranked states beside the map | Hover state held in the component and applied as classes. The money flow follows ribbons upstream and downstream from the mark under the pointer. |
 | Measure | Drag across the timeline | A brush in the SVG, with counts recomputed from the data on each move. |
-| Commit | Add to brief, Dismiss | The brief is a list in the workspace state, counted in the top bar. |
+| Commit | Add to brief, Dismiss | The brief is a list in the workspace store, counted in the top bar. |
 
-The two layout changes, staging a panel and opening the dossier, run inside `document.startViewTransition` (`morph` in `workspace.tsx`). Each panel has its own `view-transition-name`, so the browser moves every frame from its old box to its new one. The CSS at the end of `base.css` sets `object-fit: none` on the transition images, so a frame's contents keep their scale while the frame crops or uncovers them, and the old and new pictures swap in the first 45% of the move. Durations come from the theme: 380 ms in Vellum, 560 ms in Orrery.
+The two layout changes, staging a panel and opening the dossier, run inside `document.startViewTransition` (`morph` in `workspace.tsx`). Each panel has its own `view-transition-name`, so the browser moves every frame from its old box to its new one. The CSS at the end of `base.css` sets `object-fit: none` on the transition images, so a frame's contents keep their scale while the frame crops or uncovers them. Durations come from the theme: 380 ms in Vellum, 560 ms in Orrery.
 
 Every panel can be drawn at its place on the board, on the stage, or as a rail tile with a one-line summary (the `glance` prop). An agent composing a layout can rely on each element supporting all of them.
 
-`workspace.tsx` holds the state shared across panels: the staged panel, the dossier trail, the open document, the brief, and a small command channel used by the buttons on the interaction sheet. Escape closes the stage first and the dossier second. The `/` key moves focus to search.
+### Keeping layout transitions cheap
+
+- `workspace.tsx` is a small external store. Components read it through `useWs(selector)` and re-render only when their selection changes, so a change of stage re-renders the panel frames and the breadcrumb and leaves the charts alone. The update callback of a stage transition takes about 9 ms.
+- While a transition runs, `gpuState.paused` stops the GPU views from drawing every frame. They draw once at their new size, and the network camera settles in place instead of gliding.
+- Content entry waits for the transition to finish, so the two do not compete.
+- The page avoids backdrop filters, blend modes over the whole viewport and filter animations, which are costly for a compositor that is already moving large layers.
+
+`workspace.tsx` holds the state shared across panels: the staged panel, the dossier trail, the open document, the brief, the motion level, and a small command channel used by the buttons on the interaction sheet. Escape closes the dossier first and the stage second. The `/` key moves focus to search.
 
 ## Files
 
 ```
 src/themes.ts            tokens, GPU style, motion table and interaction list
+src/motion.ts            motion levels
+src/panels.ts            panel titles
 src/data.ts              the invented case file
-src/workspace.tsx        shared state and the view-transition helper
+src/workspace.tsx        shared store and the view-transition helper
 src/tip.tsx              the tooltip layer
 src/gpu/scene.ts         camera, layers, frame loop, buffer writers
 src/gpu/network.ts       layouts and buffers for the network

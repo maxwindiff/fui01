@@ -1,10 +1,10 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { entity, GRAPH } from "../data";
 import type { Kind, Party, Sector } from "../data";
-import { reducedMotion } from "../gpu/scene";
+import { motion } from "../motion";
 import { tip } from "../tip";
-import { useWorkspace } from "../workspace";
+import { useWs, ws } from "../workspace";
 
 export function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -53,14 +53,14 @@ export function EntCard({ id }: { id: string }) {
     <>
       <span className="tip-ent"><Glyph kind={e.kind} sector={e.sector} size={13} /><b>{e.name}</b></span>
       {e.role ? <span>{e.role}</span> : null}
-      <span className="tip-foot">{KIND_NAME[e.kind]}, {ties} ties in this case. Select to open the dossier.</span>
+      <span className="tip-foot">{KIND_NAME[e.kind]}, {ties} ties</span>
     </>
   );
 }
 
 // With an id the name becomes a control: pointing at it shows a card and selecting it opens the dossier.
 export function Ent({ kind, sector, id, bare, children }: { kind: Kind; sector: Sector; id?: string; bare?: boolean; children: ReactNode }) {
-  const ws = useWorkspace();
+  const on = useWs((s) => s.trail[s.trail.length - 1] === id);
   if (!id) {
     return (
       <span className="ent">
@@ -71,7 +71,7 @@ export function Ent({ kind, sector, id, bare, children }: { kind: Kind; sector: 
   }
   return (
     <button
-      type="button" className={`ent link${ws.trail[ws.trail.length - 1] === id ? " on" : ""}`}
+      type="button" className={`ent link${on ? " on" : ""}`}
       onClick={(e) => { e.stopPropagation(); tip.hide(); ws.inspect(id); }}
       onPointerEnter={(e) => tip.show(e.currentTarget, <EntCard id={id} />, { card: true, wait: true })}
       onPointerLeave={tip.hide}
@@ -103,7 +103,7 @@ export function Spark({ data, w = 96, h = 22, kind = "line", accent }: { data: n
     return (
       <svg className={`spark${accent ? " accent" : ""}`} width={w} height={h} aria-hidden="true">
         {data.map((v, i) => (
-          <rect key={i} className={i === peak ? "spark-peak" : "spark-bar"} x={2 + (i * (w - 4)) / data.length} y={py(v)} width={bw} height={Math.max(0.75, h - 2 - py(v))} />
+          <rect key={i} className={i === peak ? "spark-bar spark-peak" : "spark-bar"} style={{ ["--k" as string]: i }} x={2 + (i * (w - 4)) / data.length} y={py(v)} width={bw} height={Math.max(0.75, h - 2 - py(v))} />
         ))}
       </svg>
     );
@@ -117,23 +117,102 @@ export function Spark({ data, w = 96, h = 22, kind = "line", accent }: { data: n
   );
 }
 
-const PanelCtx = createContext({ staged: false });
+const PanelCtx = createContext({ staged: false, plays: 0 });
 export const usePanel = () => useContext(PanelCtx);
 
+// One observer serves every panel, so panels that come into view together arrive in the same batch and can be staggered.
+type Seen = (visible: boolean, order: number) => void;
+const watchers = new Map<Element, Seen>();
+const inView = new Set<string>();
+let observer: IntersectionObserver | null = null;
+function watch(el: Element, fn: Seen) {
+  observer ??= new IntersectionObserver((batch) => {
+    let k = 0;
+    for (const e of batch) watchers.get(e.target)?.(e.isIntersecting, e.isIntersecting ? k++ : 0);
+  }, { threshold: 0.05 });
+  watchers.set(el, fn);
+  observer.observe(el);
+  return () => { watchers.delete(el); observer!.unobserve(el); };
+}
+
 // A panel renders at its place on the board, on the stage, or as a tile in the rail beside the stage.
+// Its entry plays when it first comes into view ("frame") and again when it goes onto the stage ("content").
 export function Panel({
   fig, title, meta, glance, span = 12, children, flush,
 }: {
   fig: string; title: string; meta?: ReactNode; glance?: ReactNode; span?: number; children: ReactNode; flush?: boolean;
 }) {
-  const ws = useWorkspace();
-  const staged = ws.stage === fig;
-  const tile = ws.stage !== null && !staged;
+  const staged = useWs((s) => s.stage === fig);
+  const tile = useWs((s) => s.stage !== null && s.stage !== fig);
+  const replays = useWs((s) => s.replays);
+  const el = useRef<HTMLElement>(null);
+  const [enter, setEnter] = useState<"frame" | "content" | null>(null);
+  const [pending, setPending] = useState(motion.level >= 2);
+  const [order, setOrder] = useState(0);
+  const [plays, setPlays] = useState(0);
+  const st = useRef({ seen: false, visible: false, tile, staged, timer: 0, raf: 0 });
+  st.current.tile = tile;
+  st.current.staged = staged;
+
+  const arm = useCallback((kind: "frame" | "content", k: number) => {
+    const s = st.current;
+    if (motion.level < 2) return;
+    s.seen = true;
+    clearTimeout(s.timer);
+    cancelAnimationFrame(s.raf);
+    setEnter(null);
+    // The attribute goes on a frame later, which restarts the animations when an entry is still running.
+    s.raf = requestAnimationFrame(() => {
+      setPending(false);
+      setOrder(k);
+      setEnter(kind);
+      setPlays((n) => n + 1);
+      s.timer = window.setTimeout(() => setEnter(null), 5200);
+    });
+  }, []);
+
+  // The observer reports a panel as hidden while its own entry clips it to nothing, so the panel's box decides.
+  const onscreen = useCallback(() => {
+    const r = el.current!.getBoundingClientRect();
+    return r.bottom > 0 && r.top < innerHeight;
+  }, []);
+
+  useEffect(() => {
+    const s = st.current;
+    const stop = watch(el.current!, (hit, k) => {
+      const on = hit || onscreen();
+      s.visible = on;
+      if (on) inView.add(fig); else inView.delete(fig);
+      if (s.tile) return;
+      if (on && !s.seen) arm("frame", k);
+      if (!on && motion.level === 3 && s.seen) { s.seen = false; setPending(true); }
+    });
+    return () => { stop(); inView.delete(fig); clearTimeout(s.timer); cancelAnimationFrame(s.raf); };
+  }, [fig, arm, onscreen]);
+
+  const was = useRef({ tile, staged, replays });
+  useEffect(() => {
+    const s = st.current, prev = was.current;
+    was.current = { tile, staged, replays };
+    if (motion.level < 2) { setPending(false); setEnter(null); s.seen = true; return; }
+    if (replays !== prev.replays) {
+      s.seen = false;
+      if (onscreen() && !tile) arm(staged ? "content" : "frame", [...inView].filter((f) => f < fig).length);
+      else setPending(true);
+    } else if (staged && !prev.staged) arm("content", 0);
+    else if (prev.tile && !tile && onscreen() && !s.seen) arm("content", 0);
+  }, [tile, staged, replays, fig, arm, onscreen]);
+
+  const ctx = useMemo(() => ({ staged, plays }), [staged, plays]);
   // In a tight board the wide panel of a pair gives up a column and the narrow one gains it.
   const tight = span === 8 ? 7 : span === 4 ? 5 : span < 12 ? 6 : 12;
-  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: parseInt(fig, 10) } as CSSProperties;
+  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: order } as CSSProperties;
   return (
-    <section className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style} onClick={tile ? () => ws.setStage(fig) : undefined}>
+    <section
+      ref={el} className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style}
+      data-enter={enter ?? undefined} data-pending={pending && !enter ? "" : undefined}
+      onClick={tile ? () => ws.setStage(fig) : undefined}
+    >
       <header className="panel-h">
         <span className="panel-fig" aria-hidden="true">{fig}</span>
         <h2 className="panel-title">{title}</h2>
@@ -149,12 +228,31 @@ export function Panel({
         </button>
         {tile && glance ? <p className="panel-glance">{glance}</p> : null}
       </header>
-      <PanelCtx.Provider value={{ staged }}>
+      <PanelCtx.Provider value={ctx}>
         <div className={`panel-b${flush ? " flush" : ""}`} inert={tile}>{children}</div>
       </PanelCtx.Provider>
       <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
     </section>
   );
+}
+
+// A figure that counts up from zero each time its panel plays an entry, at the Lively level.
+export function Count({ to, fmt = (v) => String(Math.round(v)) }: { to: number; fmt?: (v: number) => string }) {
+  const { plays } = usePanel();
+  const [v, setV] = useState(to);
+  useEffect(() => {
+    if (motion.level < 3 || !plays) { setV(to); return; }
+    let raf = 0;
+    const t0 = performance.now() + 300;
+    const step = (now: number) => {
+      const t = Math.max(0, Math.min(1, (now - t0) / 900));
+      setV(to * (1 - Math.pow(1 - t, 3)));
+      if (t < 1) raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [plays, to]);
+  return <>{fmt(v)}</>;
 }
 
 // A region that opens in place. The row template animates from 0fr to 1fr, so the height needs no measuring.
@@ -173,7 +271,7 @@ export function useFlip<T extends HTMLElement>(order: unknown) {
   useLayoutEffect(() => {
     const was = before.current;
     before.current = null;
-    if (!was || !ref.current || reducedMotion) return;
+    if (!was || !ref.current || motion.level === 0) return;
     const css = getComputedStyle(document.documentElement);
     const duration = parseFloat(css.getPropertyValue("--dur-sort")) || 320;
     const easing = css.getPropertyValue("--ease").trim() || "ease";
@@ -188,11 +286,11 @@ export function useFlip<T extends HTMLElement>(order: unknown) {
   return [ref, capture] as const;
 }
 
-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
+export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; tip?: string }[]; onChange: (v: T) => void; label: string }) {
   return (
     <div className="seg" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} data-tip={o.tip} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}

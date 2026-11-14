@@ -1,46 +1,111 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { flushSync } from "react-dom";
-import { reducedMotion } from "./gpu/scene";
+import { gpuState, wakeScenes } from "./gpu/scene";
+import { applyMotionLevel, motion } from "./motion";
 import { tip } from "./tip";
 
+interface Command { name: string; arg?: string; n: number }
+
+export interface State {
+  stage: string | null;
+  trail: string[];
+  doc: string;
+  brief: string[];
+  command: Command;
+  level: number;
+  replays: number;
+}
+
+let state: State = { stage: null, trail: [], doc: "E-0212", brief: [], command: { name: "", n: 0 }, level: motion.level, replays: 0 };
+const subs = new Set<() => void>();
+const set = (patch: Partial<State>) => {
+  state = { ...state, ...patch };
+  subs.forEach((f) => f());
+};
+const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
+export const getState = () => state;
+
+// A component re-renders only when what its selector returns changes.
+export function useWs<T>(select: (s: State) => T): T {
+  return useSyncExternalStore(subscribe, () => select(state));
+}
+
+let morphs = 0;
 // Applies a change of layout inside a view transition, so every named frame travels from its old box to its new one.
+// The GPU views hold still while it runs and draw once at their new size.
 export function morph(change: () => void, after?: () => void) {
   tip.hide();
-  if (reducedMotion || !document.startViewTransition) {
+  if (motion.level === 0 || !document.startViewTransition) {
     flushSync(change);
     after?.();
     return;
   }
-  document.startViewTransition(() => {
+  morphs++;
+  gpuState.paused = true;
+  const resume = () => {
+    if (--morphs > 0) return;
+    gpuState.paused = false;
+    wakeScenes();
+  };
+  const t = document.startViewTransition(() => {
     flushSync(change);
     after?.();
   });
+  t.finished.then(resume, resume);
 }
 
-interface Command { name: string; arg?: string; n: number }
+const panelEl = (fig: string) => document.querySelector<HTMLElement>(`[data-panel="${fig}"]`);
+let boardY = 0;
 
-interface Workspace {
-  stage: string | null;
-  setStage: (fig: string | null) => void;
-  reveal: (fig: string) => void;
-  trail: string[];
-  inspect: (id: string) => void;
-  jump: (index: number) => void;
-  closeInspector: () => void;
-  doc: string;
-  openDoc: (id: string) => void;
-  brief: string[];
-  toggleBrief: (item: string) => void;
-  command: Command;
-  run: (name: string, arg?: string) => void;
+export const ws = {
+  setStage(fig: string | null) {
+    const was = state.stage;
+    if (fig === was) return;
+    if (fig && !was) boardY = scrollY;
+    morph(() => set({ stage: fig }), () => scrollTo(0, fig ? 0 : boardY));
+  },
+  reveal(fig: string) {
+    if (state.stage) ws.setStage(fig);
+    else panelEl(fig)?.scrollIntoView({ behavior: motion.level === 0 ? "auto" : "smooth", block: "center" });
+  },
+  inspect(id: string) {
+    const t = state.trail;
+    if (t[t.length - 1] === id) return;
+    if (t.length) set({ trail: [...t, id].slice(-6) });
+    else morph(() => set({ trail: [id] }));
+  },
+  jump(index: number) { set({ trail: state.trail.slice(0, index + 1) }); },
+  closeInspector() {
+    if (state.trail.length) morph(() => set({ trail: [] }));
+  },
+  home() {
+    if (!state.stage && !state.trail.length) { scrollTo({ top: 0, behavior: motion.level === 0 ? "auto" : "smooth" }); return; }
+    morph(() => set({ stage: null, trail: [] }), () => scrollTo(0, 0));
+  },
+  openDoc(id: string) {
+    set({ doc: id });
+    ws.reveal("12");
+  },
+  toggleBrief(item: string) {
+    set({ brief: state.brief.includes(item) ? state.brief.filter((x) => x !== item) : [...state.brief, item] });
+  },
+  run(name: string, arg?: string) { set({ command: { name, arg, n: state.command.n + 1 } }); },
+  replay() { set({ replays: state.replays + 1 }); },
+  // A change of level replays the entry of the panels in view, so the reader can compare levels on the spot.
+  setLevel(next: number) {
+    applyMotionLevel(next);
+    set({ level: next, replays: state.replays + 1 });
+  },
+};
+
+// Everything in the store plus its actions. Components that render often should call useWs with a selector instead.
+export function useWorkspace() {
+  return { ...useWs((s) => s), ...ws };
 }
 
-const Ctx = createContext<Workspace | null>(null);
-export const useWorkspace = () => useContext(Ctx)!;
-
+// Runs fn each time the named command is issued after the component mounts.
 export function useCommand(name: string, fn: (arg?: string) => void) {
-  const { command } = useWorkspace();
+  const command = useWs((s) => s.command);
   const latest = useRef(fn);
   latest.current = fn;
   const seen = useRef(command.n);
@@ -49,54 +114,4 @@ export function useCommand(name: string, fn: (arg?: string) => void) {
     seen.current = command.n;
     if (command.name === name) latest.current(command.arg);
   }, [command, name]);
-}
-
-const panelEl = (fig: string) => document.querySelector<HTMLElement>(`[data-panel="${fig}"]`);
-
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [stage, setStageState] = useState<string | null>(null);
-  const [trail, setTrail] = useState<string[]>([]);
-  const [doc, setDoc] = useState("E-0212");
-  const [brief, setBrief] = useState<string[]>([]);
-  const [command, setCommand] = useState<Command>({ name: "", n: 0 });
-  const live = useRef({ stage, trail });
-  live.current = { stage, trail };
-  const boardY = useRef(0);
-
-  const setStage = useCallback((fig: string | null) => {
-    const was = live.current.stage;
-    if (fig === was) return;
-    if (fig && !was) boardY.current = scrollY;
-    morph(() => setStageState(fig), () => scrollTo(0, fig ? 0 : boardY.current));
-  }, []);
-
-  const reveal = useCallback((fig: string) => {
-    if (live.current.stage) setStage(fig);
-    else panelEl(fig)?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
-  }, [setStage]);
-
-  const inspect = useCallback((id: string) => {
-    const t = live.current.trail;
-    if (t[t.length - 1] === id) return;
-    if (t.length) setTrail([...t, id].slice(-6));
-    else morph(() => setTrail([id]));
-  }, []);
-  const jump = useCallback((index: number) => setTrail((t) => t.slice(0, index + 1)), []);
-  const closeInspector = useCallback(() => {
-    if (live.current.trail.length) morph(() => setTrail([]));
-  }, []);
-
-  const openDoc = useCallback((id: string) => {
-    setDoc(id);
-    reveal("12");
-  }, [reveal]);
-
-  const toggleBrief = useCallback((item: string) => setBrief((b) => (b.includes(item) ? b.filter((x) => x !== item) : [...b, item])), []);
-  const run = useCallback((name: string, arg?: string) => setCommand((c) => ({ name, arg, n: c.n + 1 })), []);
-
-  const value = useMemo(
-    () => ({ stage, setStage, reveal, trail, inspect, jump, closeInspector, doc, openDoc, brief, toggleBrief, command, run }),
-    [stage, setStage, reveal, trail, inspect, jump, closeInspector, doc, openDoc, brief, toggleBrief, command, run],
-  );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

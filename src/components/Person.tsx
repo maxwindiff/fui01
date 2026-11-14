@@ -1,5 +1,5 @@
 import { CONNECTIONS, fmtMoney, LEAN, LEAN_FOCUS, SEATS, SPARK_CONTACTS, SPARK_MONEY, VOTES } from "../data";
-import { Ent, PartyChip, Spark, useSize } from "./primitives";
+import { Count, Ent, PartyChip, Spark, useSize } from "./primitives";
 
 function Portrait() {
   return (
@@ -43,19 +43,19 @@ export function PersonCard() {
       <dl className="facts">
         <div>
           <dt>From this network</dt>
-          <dd><b>$1.96M</b><Spark data={SPARK_MONEY} kind="bar" accent /></dd>
+          <dd><b><Count to={1960} fmt={fmtMoney} /></b><Spark data={SPARK_MONEY} kind="bar" accent /></dd>
           <dd className="sub">2024 cycle, gifts and ads. Peak in Sep 2025.</dd>
         </div>
         <div>
           <dt>Logged contacts</dt>
-          <dd><b>74</b><Spark data={SPARK_CONTACTS} /></dd>
+          <dd><b><Count to={74} /></b><Spark data={SPARK_CONTACTS} /></dd>
           <dd className="sub">Office calendar and lobbying reports, 16 months.</dd>
         </div>
       </dl>
       <h4 className="sub-h">Strongest ties</h4>
       <ol className="ties">
         {CONNECTIONS.map((c) => (
-          <li key={c.id}>
+          <li key={c.id} style={{ ["--k" as string]: CONNECTIONS.indexOf(c) * 3 }}>
             <Ent kind={c.kind} sector={c.sector} id={c.id}>{c.name}</Ent>
             <span className="ties-note">{c.note}</span>
             <span className="ties-bar"><i style={{ width: `${(c.v / max) * 100}%` }} /></span>
@@ -78,7 +78,7 @@ function LeanAxis() {
   return (
     <div ref={ref} className="chart">
       {w > 0 ? (
-        <svg width={w} height={h} role="img" aria-label="Voting record position of each senator, Whitcombe at plus 0.38">
+        <svg className="wipe" width={w} height={h} role="img" aria-label="Voting record position of each senator, Whitcombe at plus 0.38">
           <path className="c-axis" d={`M8 50.5H${w - 8}`} />
           <path className="c-tick" d={`M${x(0)} 44V57`} />
           {LEAN.map((d, i) => (
@@ -118,7 +118,7 @@ function Hemicycle() {
       {pos.map((p, i) => {
         const s = SEATS[i];
         return (
-          <g key={i} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
+          <g key={i} style={{ ["--k" as string]: i }} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
             {s.funded ? <circle className="seat-ring" cx={p.x} cy={p.y} r="9.6" /> : null}
             <circle className="seat-dot" cx={p.x} cy={p.y} r="6" />
             {s.focus ? <path className="seat-mark" d={`M${p.x - 3} ${p.y}h6M${p.x} ${p.y - 3}v6`} /> : null}
@@ -131,10 +131,10 @@ function Hemicycle() {
 
 function VoteStrip() {
   return (
-    <svg className="votes" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
+    <svg className="votes wipe" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
       <path className="c-axis" d={`M0 15H${VOTES.length * 6}`} vectorEffect="non-scaling-stroke" />
       {VOTES.map((v, i) =>
-        <g key={i} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
+        <g key={i} style={{ ["--k" as string]: i }} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
           <rect className="c-hit" x={i * 6} y={0} width={6} height={30} />
           {v.v === 0
             ? <rect className="vote absent" x={i * 6 + 1.5} y={14} width={2} height={2} />
@@ -157,13 +157,13 @@ export function Affiliation() {
         <div>
           <h4 className="sub-h">Subcommittee on Space Procurement</h4>
           <p className="seat-count"><PartyChip party="D" /> <b className="num">9</b> <PartyChip party="I" /> <b className="num">1</b> <PartyChip party="R" /> <b className="num">11</b></p>
-          <p className="note">Ringed seats took money from this network: 6 of 11 Republicans, 3 of 9 Democrats and the Independent. Whitcombe holds the crossed seat.</p>
+          <p className="note">Ringed seats took money from this network: 6 of 11 Republicans, 3 of 9 Democrats and the Independent.</p>
         </div>
       </section>
       <section>
         <h4 className="sub-h">Last 56 votes</h4>
         <VoteStrip />
-        <p className="note">Up is with the party, down is against. The four marked votes concern S. 2114. She broke with her party on one of them.</p>
+        <p className="note">Marked votes concern S. 2114. She broke with her party on one.</p>
       </section>
     </div>
   );

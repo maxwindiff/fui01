@@ -91,13 +91,13 @@ export function Timeline() {
           </>
         ) : (
           <>
-            <span>Drag across the timeline to measure a window.</span>
-            <button type="button" className="btn quiet" onClick={() => setBrush(TL_WINDOW)}>Measure the 90 days before the award</button>
+            <span>Drag to measure</span>
+            <button type="button" className="btn quiet" onClick={() => setBrush(TL_WINDOW)}>90 days before the award</button>
           </>
         )}
       </p>
       {w > 0 ? (
-        <svg width={w} height={H} role="img" aria-label="Timeline of contacts, gifts, legislative steps, events and Petra Voss's career, January 2024 to June 2026">
+        <svg className="wipe" width={w} height={H} role="img" aria-label="Timeline of contacts, gifts, legislative steps, events and Petra Voss's career, January 2024 to June 2026">
           <rect className="tl-window" x={x(TL_WINDOW.a)} y={22} width={x(TL_WINDOW.b) - x(TL_WINDOW.a)} height={H - 22} />
           {months.map((t, i) => {
             const d = new Date(t);
@@ -125,7 +125,7 @@ export function Timeline() {
           ))}
 
           {TL_CONTACTS.map((c, i) => (
-            <rect key={i} className={`tl-contact${c.key ? " key" : ""}`} x={x(c.t) - 1.25} y={lane("contacts").y + lane("contacts").h - c.n * 7.5 * k} width={2.5} height={c.n * 7.5 * k} />
+            <rect key={i} style={{ ["--k" as string]: i }} className={`tl-contact${c.key ? " key" : ""}`} x={x(c.t) - 1.25} y={lane("contacts").y + lane("contacts").h - c.n * 7.5 * k} width={2.5} height={c.n * 7.5 * k} />
           ))}
           <text className="c-label strong accent" x={x(TL_WINDOW.a) - 6} y={lane("contacts").y + 10} textAnchor="end">
             {WINDOW_CONTACTS} contacts in the 90 days before the award
@@ -135,7 +135,7 @@ export function Timeline() {
             const l = lane("gifts");
             const top = l.y + l.h - 4 - Math.sqrt(g.v / maxGift) * (l.h - 14);
             return (
-              <g key={i} className="tl-gift">
+              <g key={i} className="tl-gift" style={{ ["--k" as string]: i * 3 }}>
                 <path d={`M${x(g.t).toFixed(1)} ${l.y + l.h}V${top.toFixed(1)}`} />
                 <circle cx={x(g.t)} cy={top} r={2 + Math.sqrt(g.v / maxGift) * 3.2} />
                 {g.v === maxGift ? <text className="c-label strong" x={x(g.t) - 9} y={top + 4} textAnchor="end">{fmtMoney(g.v)}</text> : null}
@@ -173,7 +173,7 @@ export function Timeline() {
             const xa = Math.max(left, x(c.a));
             const wide = x(c.b) - xa > c.text.length * 7 + 16;
             return (
-              <g key={i} className={`tl-career sec-${c.sector}`}>
+              <g key={i} className={`tl-career sec-${c.sector}`} style={{ ["--k" as string]: i * 6 }}>
                 <rect x={xa} y={l.y + 5 + i * 20 * k} width={x(c.b) - xa} height={14} />
                 {wide ? <text className="tl-career-label" x={xa + 6} y={l.y + 16 + i * 20 * k}>{c.text}<tspan className="tl-career-sub" dx="10">{c.sub}</tspan></text> : null}
               </g>

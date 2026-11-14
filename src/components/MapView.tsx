@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { getGpu, reducedMotion, Scene, TOP_DOWN } from "../gpu/scene";
+import { getGpu, Scene, TOP_DOWN } from "../gpu/scene";
+import { motion } from "../motion";
 import { buildMapBuffers, loadMap, MAP_H, MAP_W, spikeHeight, stateAt } from "../gpu/map";
 import type { MapModel } from "../gpu/map";
 import { fmtMoney, MAP_EVENTS, STATE_GIVING } from "../data";
@@ -7,6 +8,7 @@ import { rgba } from "../themes";
 import type { Theme } from "../themes";
 import { Segmented } from "./primitives";
 import { tip } from "../tip";
+import { useWs } from "../workspace";
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -17,7 +19,8 @@ export function MapView({ theme }: { theme: Theme }) {
   const [lit, setLit] = useState<string | null>(null);
   const [space, setSpace] = useState<"flat" | "deep">("deep");
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
-  const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void } | null>(null);
+  const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void; replay: () => void } | null>(null);
+  const replays = useWs((s) => s.replays);
 
   useEffect(() => {
     let gone = false;
@@ -39,7 +42,7 @@ export function MapView({ theme }: { theme: Theme }) {
       if (!scene) return;
       const w = el.clientWidth, h = el.clientHeight;
       if (!w || !h) return;
-      const sway = deep && on && !reducedMotion ? deep.sway * 0.5 * Math.sin((idle / deep.swayPeriod) * Math.PI * 2) : 0;
+      const sway = deep && on && motion.level >= 2 ? deep.sway * (motion.level === 3 ? 0.9 : 0.5) * Math.sin((idle / deep.swayPeriod) * Math.PI * 2) : 0;
       const pitch = TOP_DOWN + ((deep?.mapPitch ?? TOP_DOWN) + tilt - TOP_DOWN) * lift;
       const k = 1 + 0.04 * lift;
       scene.lift = lift;
@@ -110,9 +113,10 @@ export function MapView({ theme }: { theme: Theme }) {
     api.current = {
       setDeep(next) {
         on = next;
-        if (reducedMotion) { lift = next ? 1 : 0; place(); return; }
+        if (motion.level === 0) { lift = next ? 1 : 0; place(); return; }
         glide = { from: lift, to: next ? 1 : 0, t0: performance.now() };
       },
+      replay() { scene?.playReveal(theme.motion.reveal); },
       light(code) {
         const next = code && model ? model.states.findIndex((st) => st.code === code) : -1;
         if (next !== hover) { hover = next; push(); }
@@ -137,7 +141,7 @@ export function MapView({ theme }: { theme: Theme }) {
           lift = glide.from + (glide.to - glide.from) * easeInOut(t);
           if (t >= 1) glide = null;
           place();
-        } else if (deep && on && !hovering && !drag && !reducedMotion) {
+        } else if (deep && on && !hovering && !drag && motion.level >= 2) {
           idle += dt / 1000;
           place();
         }
@@ -182,6 +186,10 @@ export function MapView({ theme }: { theme: Theme }) {
     };
   }, [theme]);
 
+  useEffect(() => {
+    if (replays) api.current?.replay();
+  }, [replays]);
+
   const all = Object.entries(STATE_GIVING);
   const top = all.slice(0, 8);
   const sum = (xs: [string, number][]) => xs.reduce((a, [, v]) => a + v, 0);
@@ -201,7 +209,7 @@ export function MapView({ theme }: { theme: Theme }) {
         <h4 className="sub-h">Largest donor states</h4>
         <ol className="rank">
           {top.map(([code, v]) => (
-            <li key={code} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
+            <li key={code} style={{ ["--k" as string]: top.findIndex(([c]) => c === code) * 2 }} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
               <span className="num">{code}</span>
               <span className="rank-bar"><i style={{ width: `${(v / top[0][1]) * 100}%` }} /></span>
               <span className="num">{fmtMoney(v)}</span>
@@ -210,8 +218,8 @@ export function MapView({ theme }: { theme: Theme }) {
         </ol>
         <p className="note">Eight states gave {Math.round((sum(top) / sum(all)) * 100)}% of the {fmtMoney(sum(all))} total.</p>
         <ul className="map-key">
-          <li className="key-dots"><span><i /><i /><i /></span>{deep?.form === "armillary" ? "Dot height and size are giving" : deep?.form === "strata" ? "Spike height is giving" : "Dot size is giving, $6K to $2.1M"}</li>
-          <li className="key-line money"><i />Transfer between cities</li>
+          <li className="key-dots"><span><i /><i /><i /></span>{deep?.form === "armillary" ? "Height is giving" : "Spike height is giving"}</li>
+          <li className="key-line money"><i />Transfer</li>
           <li className="key-ring"><i />Event</li>
         </ul>
       </aside>
