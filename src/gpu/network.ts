@@ -5,7 +5,7 @@ import { rgba } from "../themes";
 import type { GpuStyle, RGBA, Theme } from "../themes";
 import { BoxWriter, MARK_FLOATS, QuadWriter, SegWriter, SHAPE, writeMark } from "./scene";
 import type { Stroke } from "./scene";
-import { blur, makeField, rim, sample, scaleTo, splat } from "./field";
+import { blur, contour, makeField, rim, sample, scaleTo, splat } from "./field";
 import type { Field } from "./field";
 
 export const KIND_SHAPE: Record<Kind, number> = {
@@ -56,6 +56,8 @@ export interface NetModel {
   terrain?: Field;
   zRange: [number, number];
   bounds: [number, number, number, number];
+  // Pitch of the lattice the entities stand on, where the arrangement is a board of keys.
+  keys?: number;
   half: number;
   dense: boolean;
   adjStart: Uint32Array;
@@ -127,6 +129,8 @@ function finish(d: Draft, g: GpuStyle): NetModel {
       const plate = d.depth ? (d.depth[i] === 0 ? 2 * PLATE_STEP : ringZ[Math.min(d.depth[i], ringZ.length) - 1]) : 0;
       zBase[i] = plate;
       z[i] = plate + (d.weight ? 14 + d.weight[i] * 11 : d.radius[i] * (d.radius[i] > 4 ? 9 : 2.2));
+    } else if (form === "blocks" && d.keys) {
+      z[i] = 8 + Math.min(3, Math.floor(Math.sqrt(d.weight![i]))) * 7;
     } else if (form === "blocks") {
       const h = d.weight ? 8 + d.weight[i] * 11 : d.radius[i] > 4 ? d.radius[i] * 9 : 0;
       z[i] = g.block?.stepped ? Math.ceil(h / 22) * 22 : h;
@@ -225,6 +229,29 @@ export function buildCoreModel(g: GpuStyle): NetModel {
     for (let i = 0; i < 600; i++) sim.tick();
   }
 
+  const keys = g.block?.keys?.pitch;
+  if (keys) {
+    // Heavier entities choose first, and each takes the free place nearest to where the layout put it.
+    const taken = new Set<number>();
+    const order = nodes.map((d) => d.i).sort((a, b) => entities[b].weight - entities[a].weight);
+    for (const i of order) {
+      const fx = (nodes[i].x! * 0.6) / keys, fy = (nodes[i].y! * 0.6) / keys;
+      let best: [number, number] | null = null;
+      for (let r = 0; !best; r++) {
+        let bd = Infinity;
+        for (let cy = Math.round(fy) - r; cy <= Math.round(fy) + r; cy++)
+          for (let cx = Math.round(fx) - r; cx <= Math.round(fx) + r; cx++) {
+            if (Math.max(Math.abs(cx - Math.round(fx)), Math.abs(cy - Math.round(fy))) !== r || taken.has((cy + 512) * 1024 + cx + 512)) continue;
+            const dd = Math.hypot(cx - fx, cy - fy);
+            if (dd < bd) { bd = dd; best = [cx, cy]; }
+          }
+      }
+      taken.add((best[1] + 512) * 1024 + best[0] + 512);
+      nodes[i].x = best[0] * keys;
+      nodes[i].y = best[1] * keys;
+      radius[i] = keys * 0.36;
+    }
+  }
   const x = Float32Array.from(nodes, (d) => d.x!);
   const y = Float32Array.from(nodes, (d) => d.y!);
   let half = 0;
@@ -239,7 +266,7 @@ export function buildCoreModel(g: GpuStyle): NetModel {
     names: entities.map((e) => (e.name === e.id ? undefined : e.name)),
     roles: entities.map((e) => e.role),
     labels: entities.flatMap((e, i) => (e.label ? [i] : [])),
-    focus, rings, half: half + 30, dense: false,
+    focus, rings, keys, half: half + 30, dense: false,
   }, g);
 }
 
@@ -386,7 +413,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
       base.line([cx, cy, -STRATA_GAP], [cx, cy, STRATA_GAP], { color: rgba(g.guide.color, 0.3), width: 0.8, dash: 4, delay: 0.3 });
   }
 
-  if (form === "blocks") {
+  const keys = model.keys ? g.block!.keys! : undefined;
+  if (form === "blocks" && !keys) {
     const [x0, y0, x1, y1] = model.bounds;
     const pad = model.dense ? 40 : 46;
     quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, 0, [bg[0], bg[1], bg[2], 0], rgba(g.guide.color, 1), model.dense ? 0 : 24, g.guide.alpha, g.guide.alpha * 1.6, 1, 0);
@@ -403,6 +431,53 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
     const dots = reliefDots(f, rgba(g.map.dot.color), Math.max(f.step * 0.9, span / 150));
     surface = dots.data;
     surfaceCount = dots.count;
+    const cx = f.x0 + span / 2, cy = f.y0 + ((f.rows - 1) * f.step) / 2;
+    if (g.contour) {
+      let peak = 1;
+      for (const v of f.h) if (v > peak) peak = v;
+      const cc = rgba(g.contour.color);
+      for (let l = 1; l <= g.contour.levels; l++) {
+        const v = (peak * l) / (g.contour.levels + 0.7);
+        const index = l % 3 === 0;
+        contour(f, v, (ax, ay, bx, by) => {
+          const far = Math.hypot(ax - cx, ay - cy) / (span * 0.6);
+          base.line([ax, ay, v + 0.6], [bx, by, v + 0.6], { color: [cc[0], cc[1], cc[2], g.contour!.alpha * (index ? 1 : 0.5)], width: index ? 1 : 0.7, delay: Math.min(1, far) });
+        });
+      }
+      // A survey grid on the datum, running out past the landform into the haze.
+      const reach = span * 0.95, pitch = span / 10;
+      const gc = rgba(g.guide.color, g.guide.alpha * 0.28);
+      for (let k = -9; k <= 9; k++) {
+        base.line([cx + k * pitch, cy - reach, 0], [cx + k * pitch, cy + reach, 0], { color: gc, width: 0.6, delay: 0.5 });
+        base.line([cx - reach, cy + k * pitch, 0], [cx + reach, cy + k * pitch, 0], { color: gc, width: 0.6, delay: 0.5 });
+      }
+    }
+    if (g.contour) {
+      // The volume the landform is projected into: a box of light with ticks up its near edges.
+      const [bx0, by0, bx1, by1] = [f.x0, f.y0, f.x0 + span, f.y0 + (f.rows - 1) * f.step];
+      let top = 1;
+      for (const v of f.h) if (v > top) top = v;
+      top *= 1.12;
+      const vc = rgba(g.contour.color, 0.34), vf = rgba(g.contour.color, 0.14);
+      const ring = (zz: number, c: RGBA, dash: number) => base.poly([[bx0, by0, zz], [bx1, by0, zz], [bx1, by1, zz], [bx0, by1, zz], [bx0, by0, zz]], { color: c, width: 0.9, dash, delay: 0.1 });
+      ring(0, vc, 0);
+      ring(top, vf, 5);
+      for (const [px, py] of [[bx0, by0], [bx1, by0], [bx1, by1], [bx0, by1]]) {
+        base.line([px, py, 0], [px, py, top], { color: vf, width: 0.8, delay: 0.2 });
+        for (let t = 1; t <= 4; t++) base.line([px - 5, py, (top * t) / 5], [px + 5, py, (top * t) / 5], { color: vc, width: 0.8, delay: 0.3 });
+      }
+    }
+    if (g.dust) {
+      // Motes hang in the air over the landform. The camera's drift and the depth of field do the rest.
+      const rand = mulberry32(41), dc = rgba(g.dust.color);
+      const grown = new Float32Array(surface.length + g.dust.count * MARK_FLOATS);
+      grown.set(surface.subarray(0, surfaceCount * MARK_FLOATS));
+      for (let k = 0; k < g.dust.count; k++) {
+        const a = rand() * Math.PI * 2, r = Math.sqrt(rand()) * span * 0.75;
+        writeMark(grown, surfaceCount++, cx + Math.cos(a) * r, cy + Math.sin(a) * r, 8 + rand() * span * 0.3, span * (0.0012 + rand() * 0.0022), SHAPE.circle, [dc[0], dc[1], dc[2], 0.12 + rand() * 0.4], 0, 1, 0, 1, 0.3 + rand() * 0.7);
+      }
+      surface = grown;
+    }
   }
 
   if (form === "dome") {
@@ -486,6 +561,16 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
   const money: number[] = [];
   const edgeDelay = (e: number) => Math.max(0, Math.min(model.delay[es[e]], model.delay[et[e]]) - 0.08);
 
+  // On a board of keys a tie leaves its source sideways, runs along the gaps between the keys and enters its target
+  // from above or below. An offset inside the gap keeps ties that share a run apart.
+  const route = (e: number): [number, number, number][] => {
+    const p = keys!.pitch, a = es[e], b = et[e];
+    const dx = x[b] >= x[a] ? 1 : -1, dy = y[b] >= y[a] ? 1 : -1;
+    const o1 = (((e * 0.618) % 1) - 0.5) * p * 0.2, o2 = (((e * 0.382) % 1) - 0.5) * p * 0.2;
+    const gx = x[a] + dx * p * 0.5 + o1, gy = y[b] - dy * p * 0.5 + o2;
+    return [[x[a] + dx * p * 0.36, y[a], 0], [gx, y[a], 0], [gx, gy, 0], [x[b], gy, 0], [x[b], y[b] - dy * p * 0.36, 0]];
+  };
+
   for (let e = 0; e < m; e++) {
     const type = etype[e];
     if (type === EDGE.money) { money.push(e); continue; }
@@ -493,7 +578,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
     const s: Stroke = type === EDGE.contact
       ? { color: dim(contactC, k), width: g.contact.width * widthScale, dash: g.contact.dash, delay: edgeDelay(e) }
       : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width * widthScale, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
-    base.curve(P(es[e]), P(et[e]), bend, rise, s, steps);
+    if (keys) base.poly(route(e), s);
+    else base.curve(P(es[e]), P(et[e]), bend, rise, s, steps);
   }
 
   const rand = mulberry32(3);
@@ -507,21 +593,31 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
       if (g.money.mode === "pulse") { s.flow = 0.16 + rand() * 0.14; s.pulse = 1.5; }
       else { s.dash = model.dense ? 6 : 8; s.flow = 0.9; }
     }
-    flows.curve(P(es[e]), P(et[e]), bend, strong(e) ? lift : rise, s, steps);
+    if (keys) flows.poly(route(e), s);
+    else flows.curve(P(es[e]), P(et[e]), bend, strong(e) ? lift : rise, s, steps);
   }
 
   const blk = form === "blocks" ? g.block : undefined;
   if (blk) {
     const ink = rgba(blk.ink, blk.inkAlpha);
     const shade = rgba(blk.shadowColor, blk.shadow);
+    if (keys) {
+      const p = keys.pitch, [x0, y0, x1, y1] = model.bounds;
+      const blank = rgba(keys.blank), used = new Set<number>();
+      for (let i = 0; i < n; i++) used.add(Math.round(y[i] / p) * 4096 + Math.round(x[i] / p));
+      for (let cy = Math.round(y0 / p) - 1; cy <= Math.round(y1 / p) + 1; cy++)
+        for (let cx = Math.round(x0 / p) - 1; cx <= Math.round(x1 / p) + 1; cx++)
+          if (!used.has(cy * 4096 + cx)) boxes.box(cx * p, cy * p, 0, p * 0.36, 4, blank, shadeRgb(blank, 0.7), ink, blk.outline, 0, Math.min(1, Math.hypot(cx * p, cy * p) / model.half));
+    }
     for (let i = 0; i < n; i++) {
       if (model.dense && model.radius[i] < 4) continue;
-      const half = model.radius[i] * blk.width;
+      const half = keys ? keys.pitch * 0.36 : model.radius[i] * blk.width;
       const hot = i === model.focus && blk.focus;
       let top = hot ? rgba(blk.focus!) : blk.paint === "sector" ? colors[model.sector[i]] : rgba(blk.top);
       let side = hot ? rgba(blk.focus!) : blk.paint === "sector" ? shadeRgb(colors[model.sector[i]], 0.82) : rgba(blk.side);
       if (!lit(i)) { top = mixRgb(top, bg, 0.72); side = mixRgb(side, bg, 0.72); }
-      boxes.box(x[i], y[i], 0, half, z[i], top, side, ink, blk.outline, 0, model.delay[i]);
+      const band = blk.band && !hot ? (lit(i) ? colors[model.sector[i]] : mixRgb(colors[model.sector[i]], bg, 0.72)) : undefined;
+      boxes.box(x[i], y[i], 0, half, z[i], top, side, ink, blk.outline, 0, model.delay[i], band, half * 2 * (blk.band ?? 0), keys && lit(i) ? keys.lamp : 0);
       if (blk.shadow > 0 && lit(i)) shadows.shadow([x[i] - half, y[i] + half], [x[i] + half, y[i] - half], z[i], SUN, shade, model.delay[i]);
     }
   }
@@ -545,7 +641,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
     const knock = boxed ? 0 : -1;
     writeMark(marks, c++, x[i], y[i], z[i], r, model.shape[i], col, hollow ? g.node.stroke : 0, hollow ? knock : 1, model.dense ? 0 : g.node.halo, 1, Math.min(1, model.delay[i] + 0.1));
   }
-  const reach = (i: number) => (blk ? model.radius[i] * blk.width * 1.2 : model.radius[i] * g.node.scale);
+  const reach = (i: number) => (keys ? keys.pitch * 0.5 : blk ? model.radius[i] * blk.width * 1.2 : model.radius[i] * g.node.scale);
   const ring = (i: number, pad: number, width: number, color: RGBA) =>
     writeMark(marks, c++, x[i], y[i], z[i], reach(i) + pad, SHAPE.circle, color, width, 0, 0, 1, model.delay[i]);
   if (model.focus >= 0 && selected !== model.focus) ring(model.focus, 5, g.focus.ring, rgba(g.focus.color, selected < 0 ? 1 : 0.4));

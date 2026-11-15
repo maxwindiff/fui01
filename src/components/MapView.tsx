@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getGpu, Scene, TOP_DOWN } from "../gpu/scene";
 import { motion } from "../motion";
 import { buildMapBuffers, loadMap, MAP_H, MAP_W, spikeHeight, stateAt } from "../gpu/map";
@@ -9,6 +9,7 @@ import type { Theme } from "../themes";
 import { Segmented } from "./primitives";
 import { tip } from "../tip";
 import { useWs } from "../workspace";
+import { Hud } from "./Hud";
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
@@ -21,6 +22,8 @@ export function MapView({ theme }: { theme: Theme }) {
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
   const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void; replay: () => void } | null>(null);
   const replays = useWs((s) => s.replays);
+  const live = useRef<Scene | null>(null);
+  const sceneOf = useCallback(() => live.current, []);
 
   useEffect(() => {
     let gone = false;
@@ -139,6 +142,7 @@ export function MapView({ theme }: { theme: Theme }) {
         { kind: "segs", name: "arcs", blend: g.additive ? "additive" : "premultiplied", glow: g.glow },
         { kind: "marks", name: "top" },
       ], { solid: !!g.block });
+      live.current = scene;
       if (deep?.fov) scene.cam.fov = deep.fov;
       scene.bg = rgba(theme.gpu.vizBg);
       scene.animated = true;
@@ -190,6 +194,7 @@ export function MapView({ theme }: { theme: Theme }) {
       el.removeEventListener("pointerenter", enter);
       el.removeEventListener("pointerleave", leave);
       labelBox.replaceChildren();
+      live.current = null;
       scene?.dispose();
     };
   }, [theme]);
@@ -207,6 +212,7 @@ export function MapView({ theme }: { theme: Theme }) {
         <canvas ref={canvas} aria-label="Map of giving by state" />
         <div className="viz-labels" ref={labels} />
         {status === "unsupported" ? <p className="viz-msg">This view draws with WebGPU, which this browser does not provide.</p> : null}
+        {theme.hud ? <Hud scene={sceneOf} /> : null}
         {deep ? (
           <div className="viz-tr">
             <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.mapLabel }]} />

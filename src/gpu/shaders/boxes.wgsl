@@ -9,6 +9,9 @@ struct Box {
   top: vec4f,
   side: vec4f,
   ink: vec4f,
+  band: vec4f,
+  // x: height of the band on the sides, in world units.  y: brightening at the middle of the top.
+  fx: vec4f,
 }
 @group(0) @binding(1) var<storage, read> boxes: array<Box>;
 
@@ -57,7 +60,12 @@ struct VOut {
 @fragment fn fs_main(in: VOut) -> @location(0) vec4f {
   let b = boxes[in.inst];
   let top = step(0.999, in.light);
-  var rgb = mix(b.side.rgb * in.light, b.top.rgb * (1.0 - b.b.w * view.lift), top);
+  let drop = in.size.y - in.uv.y;
+  let banded = step(b.fx.x * 0.7, drop) * step(drop, b.fx.x * 1.7) * step(b.fx.x * 2.1, in.size.y) * step(0.001, b.fx.x);
+  let side = mix(b.side.rgb, b.band.rgb, banded) * in.light;
+  let middle = 1.0 - smoothstep(0.0, 1.25, length(in.uv / in.size - 0.5) * 2.0);
+  let cap = mix(b.top.rgb * (1.0 - b.b.w * view.lift), vec3f(1.0), b.fx.y * middle);
+  var rgb = mix(side, cap, top);
   let ppw = view.focal / in.depth;
   let edge = min(min(in.uv.x, in.size.x - in.uv.x), min(in.uv.y, in.size.y - in.uv.y)) * ppw;
   let w = b.b.z * view.dpr;

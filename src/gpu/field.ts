@@ -63,3 +63,25 @@ export function rim(f: Field, x: number, y: number): number {
   const n = 1 / Math.hypot(gx, gy, 1);
   return Math.max(0, Math.min(1, (0.55 * gx + 0.62 * gy) * n * 1.5 + 0.12));
 }
+
+// Walks the contour at height v and reports each straight piece of it, a cell at a time.
+export function contour(f: Field, v: number, piece: (x0: number, y0: number, x1: number, y1: number) => void) {
+  const { cols, rows, step, h } = f;
+  const p: number[] = [];
+  const cut = (a: number, b: number, ax: number, ay: number, bx: number, by: number) => {
+    if ((a < v) === (b < v)) return;
+    const t = (v - a) / (b - a);
+    p.push(f.x0 + (ax + (bx - ax) * t) * step, f.y0 + (ay + (by - ay) * t) * step);
+  };
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const i = r * cols + c;
+      p.length = 0;
+      cut(h[i], h[i + 1], c, r, c + 1, r);
+      cut(h[i + 1], h[i + cols + 1], c + 1, r, c + 1, r + 1);
+      cut(h[i + cols], h[i + cols + 1], c, r + 1, c + 1, r + 1);
+      cut(h[i], h[i + cols], c, r, c, r + 1);
+      for (let k = 0; k + 3 < p.length; k += 4) piece(p[k], p[k + 1], p[k + 2], p[k + 3]);
+    }
+  }
+}

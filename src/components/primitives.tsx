@@ -5,6 +5,7 @@ import type { Kind, Party, Sector } from "../data";
 import { motion } from "../motion";
 import { tip } from "../tip";
 import { useWs, ws } from "../workspace";
+import { PanelIcon } from "../icons";
 
 export function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -206,7 +207,7 @@ export function Panel({
   const ctx = useMemo(() => ({ staged, plays }), [staged, plays]);
   // In a tight board the wide panel of a pair gives up a column and the narrow one gains it.
   const tight = span === 8 ? 7 : span === 4 ? 5 : span < 12 ? 6 : 12;
-  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: order } as CSSProperties;
+  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: order, ["--n"]: +fig } as CSSProperties;
   return (
     <section
       ref={el} className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style}
@@ -215,7 +216,9 @@ export function Panel({
     >
       <header className="panel-h">
         <span className="panel-fig" aria-hidden="true">{fig}</span>
+        <PanelIcon fig={fig} />
         <h2 className="panel-title">{title}</h2>
+        <i className="panel-deco" aria-hidden="true" />
         {meta && !tile ? <span className="panel-meta">{meta}</span> : null}
         <button
           type="button" className="panel-x" aria-label={staged ? `Return ${title} to the board` : `Open ${title} at full size`}

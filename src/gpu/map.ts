@@ -6,7 +6,7 @@ import { rgba } from "../themes";
 import type { RGBA, Theme } from "../themes";
 import { BoxWriter, MARK_FLOATS, QuadWriter, SegWriter, SHAPE, writeMark } from "./scene";
 import type { Stroke } from "./scene";
-import { blur, makeField, rim, sample, scaleTo, splat } from "./field";
+import { blur, contour, makeField, rim, sample, scaleTo, splat } from "./field";
 import type { Field } from "./field";
 import { SUN } from "./network";
 
@@ -192,9 +192,19 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
   if (form === "strata") quads.sheet(-26, -22, MAP_W + 26, MAP_H + 22, 0, rgba("#F5F8F2", 0.5), rgba(m.border.color), 26, 0.16, 0.5, 0.9, 0);
 
   let dotCount = 0;
-  const dots = new Float32Array((m.dot.alpha > 0 && !blk ? model.dots.length : 0) * MARK_FLOATS);
+  const g = theme.gpu;
+  const pixel = !!m.pixel;
+  const extra = (form === "relief" && g.dust ? g.dust.count : 0);
+  const dots = new Float32Array((pixel ? model.cells.length : (m.dot.alpha > 0 && !blk ? model.dots.length : 0) + extra) * MARK_FLOATS);
   const stem = rgba(m.dot.color, 0.1);
-  if (dots.length) model.dots.forEach((d, i) => {
+  if (pixel) {
+    // One square a cell, lit by the state's giving, like a low raster under the outlines.
+    for (const c of model.cells) {
+      const v = share(c.state), lit = hover === c.state;
+      const a = model.states[c.state].value ? 0.14 + 0.86 * v * v : 0.06;
+      writeMark(dots, dotCount++, c.x, c.y, 0, model.cellStep * 0.4, SHAPE.square, [dotC[0], dotC[1], dotC[2], dotC[3] * (lit ? 1 : hover >= 0 ? a * 0.5 : a)], 0, 1, 0, 1, Math.min(1, (c.x / MAP_W) * 0.6 + 0.1));
+    }
+  } else if (dots.length) model.dots.forEach((d, i) => {
     const v = share(d.state);
     const lit = hover === d.state;
     const delay = Math.min(1, (d.x / MAP_W) * 0.6 + 0.1);
@@ -213,6 +223,21 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
     writeMark(dots, dotCount++, d.x, d.y, z, lit ? r + 0.5 : r, m.dot.shape, [dotC[0], dotC[1], dotC[2], Math.min(1, dotC[3] * a)], 0, 1, m.dot.halo * v * Math.max(0, j - 0.7), 1, delay);
     if (form === "armillary" && z > 6 && i % 2 === 0) lines.line([d.x, d.y, 0], [d.x, d.y, z], { color: stem, width: 0.8, delay });
   });
+
+  if (form === "relief" && g.contour) {
+    const cc = rgba(g.contour.color);
+    for (let l = 1; l <= g.contour.levels; l++) {
+      const v = l / (g.contour.levels + 0.7);
+      const index = l % 3 === 0;
+      contour(model.field, v, (ax, ay, bx, by) =>
+        lines.line([ax, ay, v * RELIEF + 0.6], [bx, by, v * RELIEF + 0.6], { color: [cc[0], cc[1], cc[2], g.contour!.alpha * (index ? 1 : 0.5)], width: index ? 1 : 0.7, delay: Math.min(1, (ax / MAP_W) * 0.6 + 0.15) }));
+    }
+  }
+  if (form === "relief" && g.dust) {
+    const rnd = mulberry32(43), dc = rgba(g.dust.color);
+    for (let k = 0; k < g.dust.count; k++)
+      writeMark(dots, dotCount++, rnd() * MAP_W, rnd() * MAP_H, 8 + rnd() * 190, 0.5 + rnd() * 1.3, SHAPE.circle, [dc[0], dc[1], dc[2], 0.1 + rnd() * 0.36], 0, 1, 0, 1, 0.3 + rnd() * 0.7);
+  }
 
   if (blk) {
     const ramp = blk.ramp.map((c) => rgba(c));

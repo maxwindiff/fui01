@@ -15,6 +15,7 @@ import { DocList, DocViewer, FilingsTable, Finding } from "./components/Records"
 import { Controls } from "./components/Controls";
 import { MotionSheet } from "./components/Motion";
 import { Inspector } from "./components/Inspector";
+import { Backdrop } from "./components/Backdrop";
 import { TipLayer } from "./tip";
 import { getState, useWs, ws } from "./workspace";
 import { DOCS, FILINGS, fmtMoney, GRAPH, STATE_GIVING, WINDOW_CONTACTS } from "./data";
@@ -66,6 +67,7 @@ function MotionControl() {
   return (
     <div className="motion-ctl">
       <span className="label">Motion</span>
+      <button type="button" className="knob" aria-label={`Motion is ${MOTION_LEVELS[level].name}. Turn to the next level`} style={{ ["--turn" as string]: level }} onClick={() => ws.setLevel((level + 1) % MOTION_LEVELS.length)}><i /></button>
       <Segmented
         label="Motion" value={String(level)} onChange={(v) => ws.setLevel(+v)}
         options={MOTION_LEVELS.map((l) => ({ value: String(l.id), label: l.name, tip: l.what }))}
@@ -142,8 +144,14 @@ export function App() {
           <pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <path className="hatch-line" d="M0 0V5" />
           </pattern>
+          <filter id="bloom" x="-12%" y="-25%" width="124%" height="150%" colorInterpolationFilters="sRGB">
+            <feGaussianBlur stdDeviation="4" result="soft" />
+            <feColorMatrix in="soft" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.75 0" result="halo" />
+            <feMerge><feMergeNode in="halo" /><feMergeNode in="SourceGraphic" /></feMerge>
+          </filter>
         </defs>
       </svg>
+      {theme.backdrop ? <Backdrop /> : null}
       <TipLayer />
       <header className="switcher">
         <div className="themes" role="group" aria-label="Theme">

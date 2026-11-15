@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
 import { motion } from "../motion";
 import type { Camera } from "../gpu/scene";
@@ -9,6 +9,7 @@ import type { Theme } from "../themes";
 import { Glyph, Segmented, usePanel } from "./primitives";
 import type { Kind, Sector } from "../data";
 import { useWs, ws } from "../workspace";
+import { Hud } from "./Hud";
 
 type Density = "case" | "5k" | "100k";
 interface Readout { id?: string; name: string; role?: string; ties: number }
@@ -443,6 +444,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
     if (readout?.id && inspected) ws.inspect(readout.id);
   }, [readout]);
 
+  const sceneOf = useCallback(() => ctl.current?.scene, []);
   const change = (d: Density) => {
     setDensity(d);
     ctl.current?.setModel(d === "case" ? buildCoreModel(theme.gpu) : buildStressModel(d === "5k" ? 5000 : 100000, theme.gpu), 700);
@@ -487,6 +489,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
           </p>
         ) : null}
       </div>
+      {theme.hud ? <Hud scene={sceneOf} /> : null}
       <dl className="viz-br" data-keepout>
         {stats ? (
           <>
