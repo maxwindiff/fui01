@@ -37,7 +37,7 @@ export function Inspector() {
             <div><dt>Documents</dt><dd><b>{d.docs.length}</b></dd></div>
           </dl>
           <div className="actions">
-            <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
+            <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} data-note="commit" onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
             <button type="button" className="btn" onClick={() => ws.reveal("01")}>Show in network</button>
           </div>
           {d.groups.map((g) => (

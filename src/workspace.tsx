@@ -90,7 +90,6 @@ export const ws = {
     set({ brief: state.brief.includes(item) ? state.brief.filter((x) => x !== item) : [...state.brief, item] });
   },
   run(name: string, arg?: string) { set({ command: { name, arg, n: state.command.n + 1 } }); },
-  replay() { set({ replays: state.replays + 1 }); },
   // A change of level replays the entry of the panels in view, so the reader can compare levels on the spot.
   setLevel(next: number) {
     applyMotionLevel(next);

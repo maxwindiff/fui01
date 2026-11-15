@@ -132,7 +132,7 @@ export function Controls() {
       <section>
         <h4 className="sub-h">Actions</h4>
         <div className="actions">
-          <button type="button" className="btn primary">Add to brief</button>
+          <button type="button" className="btn primary" data-note="commit">Add to brief</button>
           <button type="button" className="btn">Export filings</button>
           <button type="button" className="btn quiet">Reset view</button>
           <button type="button" className="btn danger">Remove from case</button>

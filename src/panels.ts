@@ -13,5 +13,4 @@ export const PANEL_TITLES: Record<string, string> = {
   "12": "Document",
   "13": "Documents",
   "14": "Controls",
-  "15": "Motion and interaction",
 };

@@ -1,26 +1,18 @@
 import { CONNECTIONS, fmtMoney, LEAN, LEAN_FOCUS, SEATS, SPARK_CONTACTS, SPARK_MONEY, VOTES } from "../data";
 import { Count, Ent, PartyChip, Spark, useSize } from "./primitives";
+import portrait from "../assets/portrait.jpg";
 
 function Portrait() {
   return (
-    <div className="portrait">
-      <svg viewBox="0 0 96 116" aria-hidden="true">
-        <defs>
-          <clipPath id="bust">
-            <path d="M48 20c10.5 0 17 8 17 19.5 0 8-3.4 15.200-8.500 18.800v6.200c14 2.500 29.500 9 31.500 30v22H8V94.500c2-21 17.500-27.500 31.500-30v-6.200C34.400 54.700 31 47.500 31 39.500 31 28 37.500 20 48 20z" />
-          </clipPath>
-        </defs>
-        <path className="portrait-x" d="M0 0 96 116M96 0 0 116" />
-        <g clipPath="url(#bust)">
-          <rect className="portrait-body" width="96" height="116" />
-          {Array.from({ length: 39 }, (_, i) => (
-            <path key={i} className="portrait-line" d={`M0 ${i * 3 + 1.5}H96`} />
-          ))}
-        </g>
-        <path className="portrait-marks" d="M0 9V0h9M87 0h9v9M96 107v9h-9M9 116H0v-9" />
-      </svg>
-      <span className="portrait-id">No photo on file</span>
-    </div>
+    <figure className="portrait">
+      <div className="portrait-frame">
+        <img src={portrait} alt="Dana Whitcombe" width="96" height="116" />
+        <svg viewBox="0 0 96 116" aria-hidden="true">
+          <path className="portrait-marks" d="M0 9V0h9M87 0h9v9M96 107v9h-9M9 116H0v-9" />
+        </svg>
+      </div>
+      <figcaption className="portrait-id">File photo, 2017</figcaption>
+    </figure>
   );
 }
 

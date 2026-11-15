@@ -51,7 +51,7 @@ function FilingDetail({ f }: { f: Filing }) {
           ))}
         </svg>
         <div className="actions">
-          <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
+          <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} data-note="commit" onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
           <button type="button" className="btn" onClick={() => ws.inspect(f.regId)}>Open registrant</button>
           {f.id === "LD2-84672" ? <button type="button" className="btn" onClick={() => ws.openDoc("F-84672")}>Read the report</button> : null}
         </div>
@@ -80,7 +80,6 @@ export function FilingsTable() {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  useCommand("sort", () => sortBy("amt", sort?.key === "amt" && sort.dir === -1 ? 1 : -1));
   useCommand("filing", (id) => setOpen((s) => new Set(s).add(id ?? "LD2-84672")));
 
   return (
@@ -90,7 +89,7 @@ export function FilingsTable() {
         {COLUMNS.map((c) => (
           <span key={c.label} role="columnheader" className={c.r ? "r" : ""} aria-sort={c.key && sort?.key === c.key ? (sort.dir === 1 ? "ascending" : "descending") : undefined}>
             {c.key ? (
-              <button type="button" className={`sort${sort?.key === c.key ? (sort.dir === 1 ? " asc" : " desc") : ""}`} onClick={() => sortBy(c.key!, c.first)} data-tip={`Sort by ${c.label.toLowerCase()}`}>
+              <button type="button" className={`sort${sort?.key === c.key ? (sort.dir === 1 ? " asc" : " desc") : ""}`} onClick={() => sortBy(c.key!, c.first)} data-tip={`Sort by ${c.label.toLowerCase()}`} data-note="sort">
                 {c.label}<i aria-hidden="true" />
               </button>
             ) : c.label}
@@ -108,7 +107,7 @@ export function FilingsTable() {
               onClick={() => toggle(f.id)}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(f.id); } }}
             >
-              <span role="cell"><i className="chev" aria-hidden="true" /></span>
+              <span role="cell" data-note="row"><i className="chev" aria-hidden="true" /></span>
               <span role="cell" className="num">{f.q}</span>
               <span role="cell">{f.reg}</span>
               <span role="cell" className="codes" data-tip={filingDetail(f).issues.map((i) => i.name).join(", ")}>{f.issues}</span>
@@ -300,7 +299,7 @@ export function Finding() {
           </ol>
         </Fold>
         <div className="actions">
-          <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
+          <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} data-note="commit" onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
           <button type="button" className="btn" aria-expanded={evidence} onClick={() => setEvidence((v) => !v)}>{evidence ? "Close evidence" : "Open evidence"}</button>
           <button type="button" className="btn quiet" onClick={() => { setDismissed(true); setEvidence(false); }}>Dismiss</button>
         </div>

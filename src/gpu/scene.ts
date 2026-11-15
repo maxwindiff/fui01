@@ -10,7 +10,7 @@ import { motion, onMotionChange } from "../motion";
 export const MARK_FLOATS = 16;
 export const SEG_FLOATS = 20;
 export const QUAD_FLOATS = 28;
-export const BOX_FLOATS = 20;
+export const BOX_FLOATS = 24;
 export const SHAPE = { circle: 0, square: 1, diamond: 2, hexagon: 3, triangle: 4, asterisk: 5, plus: 6 } as const;
 
 type Kind = "marks" | "segs" | "quads" | "boxes";
@@ -334,9 +334,14 @@ export class SegWriter {
     this.put(a, b, s, 0, 1, Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]));
   }
   path(f: (t: number) => P3, steps: number, s: Stroke) {
-    this.grow(steps);
     const pts: P3[] = [];
     for (let i = 0; i <= steps; i++) pts.push(f(i / steps));
+    this.poly(pts, s);
+  }
+  // Straight runs through the given points, with dashes and flow carried across the corners.
+  poly(pts: P3[], s: Stroke) {
+    const steps = pts.length - 1;
+    this.grow(steps);
     let total = 0;
     const acc = [0];
     for (let i = 1; i <= steps; i++)
@@ -393,7 +398,8 @@ export class BoxWriter {
   constructor(capacity = 256) {
     this.data = new Float32Array(capacity * BOX_FLOATS);
   }
-  box(x: number, y: number, z0: number, half: number, height: number, top: RGBA, side: RGBA, ink: RGBA, outline: number, shade = 0, delay = 0) {
+  // lamp brightens the middle of the top face.
+  box(x: number, y: number, z0: number, half: number, height: number, top: RGBA, side: RGBA, ink: RGBA, outline: number, shade = 0, delay = 0, lamp = 0) {
     if ((this.count + 1) * BOX_FLOATS > this.data.length) {
       const next = new Float32Array(this.data.length * 2);
       next.set(this.data);
@@ -404,5 +410,6 @@ export class BoxWriter {
     d.set(top, o + 8);
     d.set(side, o + 12);
     d.set(ink, o + 16);
+    d.set([lamp, 0, 0, 0], o + 20);
   }
 }

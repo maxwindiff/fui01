@@ -18,6 +18,9 @@ export interface DeepSpace {
   mapScale?: number;
 }
 
+export interface Note { name: string; what: string; timing: string }
+export type NoteKey = "entry" | "reveal" | "morph" | "rest" | "money" | "selector";
+
 export interface Motion {
   enter: number;
   stagger: number;
@@ -28,9 +31,8 @@ export interface Motion {
   expand: number;
   sort: number;
   ease: string;
-  // Layout transitions take this curve where ease is stepped.
-  layoutEase?: string;
-  notes: { name: string; what: string; timing: string }[];
+  // Each note describes one movement and is shown as a tooltip on the element named by `on`.
+  notes: (Note & { on: NoteKey })[];
 }
 
 export interface GpuStyle {
@@ -77,6 +79,9 @@ export interface BlockStyle {
   coarse: boolean;
   // Half width of a network block, in node radii.
   width: number;
+  // Network blocks become keys of one size on a lattice of this pitch, with unlit keys in the empty places and
+  // ties routed along the gaps. lamp brightens the middle of each top.
+  keys?: { pitch: number; blank: string; lamp: number };
 }
 
 export interface Theme {
@@ -230,11 +235,11 @@ const vellum: Theme = {
     sort: 320,
     ease: "cubic-bezier(0.2, 0.7, 0.1, 1)",
     notes: [
-      { name: "Plot in", what: "Frames wipe in from the left when they come into view. Lines draw, bars rise left to right, and the money flow wipes from sources to recipients.", timing: "520 ms a panel, 45 ms apart" },
-      { name: "Ink ties", what: "Network ties and state borders draw from source to target.", timing: "1.5 s, on the GPU" },
-      { name: "Pull apart", what: "Flat to Strata separates the sheets and tips the camera in one move.", timing: "1.1 s" },
-      { name: "Drift", what: "The stack sways slowly and stops under the pointer.", timing: "26 s a cycle" },
-      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+      { on: "entry", name: "Plot in", what: "Frames wipe in from the left when they come into view. Lines draw, bars rise left to right, and the money flow wipes from sources to recipients.", timing: "520 ms a panel, 45 ms apart" },
+      { on: "reveal", name: "Ink ties", what: "Network ties and state borders draw from source to target.", timing: "1.5 s, on the GPU" },
+      { on: "morph", name: "Pull apart", what: "Flat to Strata separates the sheets and tips the camera in one move.", timing: "1.1 s" },
+      { on: "rest", name: "Drift", what: "The stack sways slowly and stops under the pointer.", timing: "26 s a cycle" },
+      { on: "money", name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -371,11 +376,11 @@ const orrery: Theme = {
     sort: 460,
     ease: "cubic-bezier(0.3, 0, 0.1, 1)",
     notes: [
-      { name: "Wind up", what: "Plates fade up as they come into view while the tick scale under each title sweeps across. Lines draw and the money flow wipes from sources to recipients.", timing: "700 ms a panel, 60 ms apart" },
-      { name: "Sweep", what: "Rings sweep round from twelve o'clock and nodes light as their ring arrives.", timing: "2.2 s, on the GPU" },
-      { name: "Lift off", what: "Plan to Armillary raises every stem off its ring and tips the camera in one move.", timing: "1.4 s" },
-      { name: "Turn", what: "The instrument swings slowly while tick scales turn against it. Both stop under the pointer.", timing: "48 s a cycle" },
-      { name: "Money", what: "Pulses travel along arcs and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
+      { on: "entry", name: "Wind up", what: "Plates fade up as they come into view while the tick scale under each title sweeps across. Lines draw and the money flow wipes from sources to recipients.", timing: "700 ms a panel, 60 ms apart" },
+      { on: "reveal", name: "Sweep", what: "Rings sweep round from twelve o'clock and nodes light as their ring arrives.", timing: "2.2 s, on the GPU" },
+      { on: "morph", name: "Lift off", what: "Plan to Armillary raises every stem off its ring and tips the camera in one move.", timing: "1.4 s" },
+      { on: "rest", name: "Turn", what: "The instrument swings slowly while tick scales turn against it. Both stop under the pointer.", timing: "48 s a cycle" },
+      { on: "money", name: "Money", what: "Pulses travel along arcs and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
     ],
   },
 };
@@ -386,7 +391,7 @@ const floe: Theme = {
   name: "Floe",
   mode: "light",
   concept:
-    "A white massing model on a survey sheet. Entities stand as blocks as tall as their weight in the case, the sun is low, and one orange mark carries the money.",
+    "A white massing model on a survey sheet. Entities stand as blocks as tall as their weight in the case, the sun is low, and one blue carries the money.",
   lineage: "White embossed instrument panels, architectural models, polar survey charts",
   vars: {
     "--bg": "#ECEEEF",
@@ -403,15 +408,15 @@ const floe: Theme = {
     "--ink-3": "#8A949C",
     "--rule": "rgba(31,37,43,0.16)",
     "--rule-strong": "rgba(31,37,43,0.85)",
-    "--accent": "#E8542A",
-    "--accent-text": "#C7401A",
+    "--accent": "#3D65B5",
+    "--accent-text": "#30539C",
     "--accent-ink": "#FFFFFF",
-    "--gov": "#4F86B5",
+    "--gov": "#2F8F85",
     "--corp": "#1F252B",
-    "--inter": "#E8542A",
+    "--inter": "#3D65B5",
     "--event": "#68747E",
-    "--money": "#E8542A",
-    "--contact": "#4F86B5",
+    "--money": "#3D65B5",
+    "--contact": "#2F8F85",
     "--dem": "#4F86B5",
     "--rep": "#D6453D",
     "--ind": "#8A949C",
@@ -460,8 +465,8 @@ const floe: Theme = {
   palette: [
     { name: "Pack ice", role: "ground", var: "--bg" },
     { name: "Polar night", role: "ink, corporate", var: "--ink" },
-    { name: "Signal orange", role: "money, intermediaries", var: "--accent" },
-    { name: "Steel blue", role: "government, contact", var: "--gov" },
+    { name: "Glacier blue", role: "money, intermediaries", var: "--accent" },
+    { name: "Sea green", role: "government, contact", var: "--gov" },
     { name: "Meltwater", role: "quiet fills", var: "--tint" },
     { name: "Slate", role: "events, notes", var: "--ink-3" },
   ],
@@ -475,21 +480,21 @@ const floe: Theme = {
     layout: "force",
     block: {
       paint: "plain", top: "#FFFFFF", side: "#F0F3F5", ink: "#1F252B", inkAlpha: 0.1, outline: 0.6,
-      shadow: 0.55, shadowColor: "#55616C", focus: "#E8542A", glyph: null,
-      ramp: ["#F6F8F8", "#E3ECEB", "#C6DAD7", "#A3C4C0", "#7FAAA8"], hover: "#E8542A", stepped: false, coarse: false, width: 1.5,
+      shadow: 0.55, shadowColor: "#55616C", focus: "#3D65B5", glyph: null,
+      ramp: ["#F6F8F8", "#E3ECEB", "#C6DAD7", "#A3C4C0", "#7FAAA8"], hover: "#3D65B5", stepped: false, coarse: false, width: 1.5,
     },
     edge: { color: "#1F252B", alpha: 0.3, width: 0.8, curve: 0 },
-    money: { color: "#E8542A", alpha: 1, width: 1.7, weak: 0.8, weakAlpha: 0.6, mode: "dash" },
-    contact: { color: "#4F86B5", alpha: 0.8, width: 0.9, dash: 3 },
+    money: { color: "#3D65B5", alpha: 1, width: 1.7, weak: 0.8, weakAlpha: 0.6, mode: "dash" },
+    contact: { color: "#2F8F85", alpha: 0.8, width: 0.9, dash: 3 },
     node: { stroke: 1.1, hollowOfficials: true, halo: 0, scale: 0.7 },
-    focus: { color: "#E8542A", ring: 1.3 },
+    focus: { color: "#3D65B5", ring: 1.3 },
     guide: { color: "#1F252B", alpha: 0.24 },
     map: {
       border: { color: "#1F252B", alpha: 0, width: 0.6 },
       dot: { color: "#1F252B", alpha: 0.6, min: 0.45, max: 2.4, shape: 0, halo: 0, jitter: 0 },
-      arc: { color: "#E8542A", alpha: 1, width: 1.4, mode: "dash" },
+      arc: { color: "#3D65B5", alpha: 1, width: 1.4, mode: "dash" },
       city: { color: "#1F252B", shape: 0, fill: -1 },
-      event: { color: "#4F86B5" },
+      event: { color: "#2F8F85" },
     },
     deep: {
       form: "blocks", pitch: 0.74, yaw: -0.62, sway: 0.06, swayPeriod: 30, aperture: 0, fogFloor: 0.72,
@@ -507,11 +512,11 @@ const floe: Theme = {
     sort: 300,
     ease: "cubic-bezier(0.2, 0.8, 0.2, 1)",
     notes: [
-      { name: "Rule in", what: "The heavy rule under each title runs out from its tab when the panel comes into view, then the content fades up beneath it.", timing: "420 ms a panel, 35 ms apart" },
-      { name: "Extrude", what: "Blocks rise out of the sheet from the centre outward.", timing: "1.5 s, on the GPU" },
-      { name: "Raise", what: "Plan to Massing lifts every block to its height and lengthens the shadows with it.", timing: "1 s" },
-      { name: "Drift", what: "The model turns a few degrees each way and stops under the pointer.", timing: "30 s a cycle" },
-      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+      { on: "entry", name: "Rule in", what: "The heavy rule under each title runs out from its tab when the panel comes into view, then the content fades up beneath it.", timing: "420 ms a panel, 35 ms apart" },
+      { on: "reveal", name: "Extrude", what: "Blocks rise out of the sheet from the centre outward.", timing: "1.5 s, on the GPU" },
+      { on: "morph", name: "Raise", what: "Plan to Massing lifts every block to its height and lengthens the shadows with it.", timing: "1 s" },
+      { on: "rest", name: "Drift", what: "The model turns a few degrees each way and stops under the pointer.", timing: "30 s a cycle" },
+      { on: "money", name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -522,134 +527,141 @@ const consoleTheme: Theme = {
   name: "Console",
   mode: "light",
   concept:
-    "A printed operations manual with screens set into the page. Heavy grotesque figures sit on cream grid paper under thick rules, and the network and map run on dark tubes as stacks of coloured cells.",
-  lineage: "Ivory mission consoles, screenprinted pixel-grid posters, mint and charcoal instrument panels",
+    "A control room desk. Panels are enamelled steel bays with engraved label plates and a pictogram each, controls are backlit keys set in black wells, charts run on recorder paper, and the network is a board of lit keys with ties routed between them like a mimic diagram.",
+  lineage: "Power station control desks, annunciator panels, backlit key matrices, shipboard pictogram standards",
   vars: {
-    "--bg": "#EDE3CB",
-    "--bg-image":
-      "linear-gradient(rgba(27,26,23,0.075) 1px, transparent 1px) 0 0 / 24px 24px, linear-gradient(90deg, rgba(27,26,23,0.075) 1px, transparent 1px) 0 0 / 24px 24px",
-    "--surface": "transparent",
-    "--surface-2": "#DFD3B4",
-    "--viz-bg": "#15140F",
+    "--bg": "#CBC3AE",
+    "--bg-image": "none",
+    "--surface": "#DAD3C0",
+    "--surface-2": "#C9C1AB",
+    "--viz-bg": "#12110C",
     "--viz-image": "none",
     "--viz-image-size": "auto",
-    "--viz-ink": "#F2EBD9",
-    "--ink": "#1B1A17",
-    "--ink-2": "#5A574E",
-    "--ink-3": "#8C8777",
-    "--rule": "rgba(27,26,23,0.22)",
-    "--rule-strong": "#1B1A17",
-    "--accent": "#E8603C",
-    "--accent-text": "#BF4420",
-    "--accent-ink": "#1B1A17",
-    "--gov": "#5B2E9E",
-    "--corp": "#1B1A17",
-    "--inter": "#E8603C",
-    "--event": "#C98F0E",
-    "--money": "#E8603C",
-    "--contact": "#1C8E88",
-    "--dem": "#2A7FC0",
-    "--rep": "#C9402E",
-    "--ind": "#8C8777",
-    "--alert": "#C9402E",
-    "--ok": "#1E8A3E",
-    "--mustard": "#F2B52A",
-    "--font-display": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
-    "--font-ui": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
-    "--font-text": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
-    "--font-label": "'IBM Plex Mono', ui-monospace, monospace",
-    "--font-num": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
-    "--display-weight": "800",
-    "--display-track": "-0.035em",
-    "--display-case": "none",
-    "--title-size": "16px",
-    "--title-weight": "800",
+    "--viz-ink": "#F7E6BD",
+    "--ink": "#17160F",
+    "--ink-2": "#4B473B",
+    "--ink-3": "#7C7665",
+    "--rule": "rgba(23,22,15,0.2)",
+    "--rule-strong": "rgba(23,22,15,0.78)",
+    "--accent": "#E0502F",
+    "--accent-text": "#B6371A",
+    "--accent-ink": "#17160F",
+    "--gov": "#1B7BA3",
+    "--corp": "#17160F",
+    "--inter": "#D24726",
+    "--event": "#A26F08",
+    "--money": "#D24726",
+    "--contact": "#1B7BA3",
+    "--dem": "#2C6FB5",
+    "--rep": "#C93A2B",
+    "--ind": "#7C7665",
+    "--alert": "#C93A2B",
+    "--ok": "#2B7F4C",
+    "--well": "#17160F",
+    "--unlit": "#3A372C",
+    "--lamp": "#F7E6BD",
+    "--lamp-blue": "#74CBEA",
+    "--lamp-red": "#EE5C3C",
+    "--lamp-white": "#F2F1EA",
+    "--lamp-amber": "#F5B93B",
+    "--lamp-green": "#93D38C",
+    "--paper": "#E7EDD6",
+    "--font-display": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-ui": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-text": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-label": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-num": "'B612 Mono', ui-monospace, monospace",
+    "--display-weight": "600",
+    "--display-track": "0.09em",
+    "--display-case": "uppercase",
+    "--title-size": "12.5px",
+    "--title-weight": "600",
     "--label-case": "uppercase",
-    "--label-track": "0.07em",
+    "--label-track": "0.09em",
     "--label-size": "10.5px",
-    "--label-weight": "500",
-    "--ui-size": "14px",
-    "--text-size": "15.5px",
+    "--label-weight": "600",
+    "--ui-size": "15px",
+    "--text-size": "16.5px",
     "--text-leading": "1.5",
-    "--num-weight": "600",
-    "--radius": "0px",
-    "--radius-ctl": "5px",
-    "--rule-w": "1px",
-    "--stroke": "1.3",
-    "--stroke-bold": "2.4",
-    "--mast-size": "118px",
-    "--font-name": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
-    "--name-weight": "800",
-    "--name-track": "-0.03em",
-    "--chart-font": "'IBM Plex Mono', ui-monospace, monospace",
-    "--chart-size": "10.5px",
-    "--chart-weight": "500",
+    "--num-weight": "400",
+    "--radius": "4px",
+    "--radius-ctl": "4px",
+    "--rule-w": "1.5px",
+    "--stroke": "1.4",
+    "--stroke-bold": "2.2",
+    "--mast-size": "92px",
+    "--font-name": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--name-weight": "600",
+    "--name-track": "0.01em",
+    "--chart-font": "'B612 Mono', ui-monospace, monospace",
+    "--chart-size": "10px",
+    "--chart-weight": "400",
     "--chart-case": "uppercase",
-    "--chart-track": "0.04em",
-    "--net-font": "'IBM Plex Mono', ui-monospace, monospace",
-    "--net-size": "10.5px",
-    "--net-weight": "500",
+    "--chart-track": "0",
+    "--net-font": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--net-size": "11.5px",
+    "--net-weight": "600",
     "--net-case": "uppercase",
-    "--net-track": "0.05em",
-    "--redact": "#1B1A17",
+    "--net-track": "0.06em",
+    "--redact": "#17160F",
   },
   palette: [
-    { name: "Manila", role: "ground", var: "--bg" },
-    { name: "Charcoal", role: "ink, rules, screens", var: "--ink" },
-    { name: "Burnt orange", role: "money, intermediaries", var: "--accent" },
-    { name: "Purple", role: "government", var: "--gov" },
-    { name: "Teal", role: "contact", var: "--contact" },
-    { name: "Mustard", role: "events, flags", var: "--mustard" },
+    { name: "Desk enamel", role: "ground, bays", var: "--surface" },
+    { name: "Bakelite", role: "ink, wells, label plates", var: "--ink" },
+    { name: "Lamp cream", role: "lit keys, companies", var: "--lamp" },
+    { name: "Lamp red", role: "money, intermediaries, alarms", var: "--lamp-red" },
+    { name: "Lamp blue", role: "government, contact", var: "--lamp-blue" },
+    { name: "Lamp amber", role: "events, cautions", var: "--lamp-amber" },
   ],
   type: [
-    { role: "Titles, reading, figures", family: "Archivo", sample: "Twenty-six contacts in ninety days", var: "--font-text" },
-    { role: "Captions", family: "IBM Plex Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-label" },
+    { role: "Plates, titles, reading", family: "Barlow Semi Condensed", sample: "TWENTY-SIX CONTACTS IN NINETY DAYS", var: "--font-display" },
+    { role: "Meters and figures", family: "B612 Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-num" },
   ],
   gpu: {
-    vizBg: "#15140F",
+    vizBg: "#12110C",
     additive: false,
     layout: "force",
-    sectors: ["#A688EE", "#F2EBD9", "#E8603C", "#F2B52A"],
+    sectors: ["#74CBEA", "#F7E6BD", "#EE5C3C", "#F5B93B"],
     block: {
-      paint: "sector", top: "#F2EBD9", side: "#F2EBD9", ink: "#15140F", inkAlpha: 1, outline: 1,
-      shadow: 0, shadowColor: "#000000", focus: null, glyph: "#15140F",
-      ramp: ["#34322B", "#1C8E88", "#F2B52A", "#E8603C", "#F2EBD9"], hover: "#FFFFFF", stepped: true, coarse: true, width: 2,
+      paint: "sector", top: "#F7E6BD", side: "#F7E6BD", ink: "#12110C", inkAlpha: 1, outline: 1.2,
+      shadow: 0, shadowColor: "#000000", focus: null, glyph: "#17160F",
+      ramp: ["#33302A", "#F2F1EA", "#74CBEA", "#F5B93B", "#EE5C3C"], hover: "#FFFFFF", stepped: true, coarse: true, width: 2,
+      keys: { pitch: 30, blank: "#2A2821", lamp: 0.5 },
     },
-    edge: { color: "#F2EBD9", alpha: 0.3, width: 0.8, curve: 0 },
-    money: { color: "#E8603C", alpha: 1, width: 1.9, weak: 0.9, weakAlpha: 0.65, mode: "dash" },
-    contact: { color: "#2BC0B6", alpha: 0.85, width: 1, dash: 2.5 },
-    node: { stroke: 1.2, hollowOfficials: false, halo: 0, scale: 0.6 },
-    focus: { color: "#F2EBD9", ring: 1.4 },
-    guide: { color: "#F2EBD9", alpha: 0.22 },
+    edge: { color: "#F7E6BD", alpha: 0.5, width: 1.1, curve: 0 },
+    money: { color: "#EE5C3C", alpha: 1, width: 2.6, weak: 1.3, weakAlpha: 0.75, mode: "dash" },
+    contact: { color: "#74CBEA", alpha: 0.9, width: 1.1, dash: 2.5 },
+    node: { stroke: 1.2, hollowOfficials: false, halo: 0, scale: 0.5 },
+    focus: { color: "#FFFFFF", ring: 1.6 },
+    guide: { color: "#F7E6BD", alpha: 0.2 },
     map: {
-      border: { color: "#F2EBD9", alpha: 0, width: 0.6 },
-      dot: { color: "#F2EBD9", alpha: 0.6, min: 0.45, max: 2.4, shape: 1, halo: 0, jitter: 0 },
-      arc: { color: "#F2EBD9", alpha: 1, width: 1.5, mode: "dash" },
-      city: { color: "#F2EBD9", shape: 1, fill: 1 },
-      event: { color: "#A688EE" },
+      border: { color: "#F7E6BD", alpha: 0, width: 0.6 },
+      dot: { color: "#F7E6BD", alpha: 0.6, min: 0.45, max: 2.4, shape: 1, halo: 0, jitter: 0 },
+      arc: { color: "#FFFFFF", alpha: 1, width: 1.6, mode: "dash" },
+      city: { color: "#FFFFFF", shape: 1, fill: 1 },
+      event: { color: "#FFFFFF" },
     },
     deep: {
-      form: "blocks", pitch: 0.62, yaw: 0.785, sway: 0, swayPeriod: 30, aperture: 0, fogFloor: 1, fov: 0.14,
-      mapPitch: 0.66, mapYaw: 0.5, labels: ["Plan", "Stacks"], mapLabel: "Stacks", mapKey: "Storeys are giving, in four bands",
+      form: "blocks", pitch: 0.84, yaw: 0.5, sway: 0, swayPeriod: 30, aperture: 0, fogFloor: 0.6, fov: 0.32,
+      mapPitch: 0.72, mapYaw: 0.42, labels: ["Plan", "Board"], mapLabel: "Board", mapKey: "Key colour and height are giving, in four bands",
     },
   },
   motion: {
-    enter: 360,
-    stagger: 50,
+    enter: 420,
+    stagger: 60,
     reveal: 1400,
     morph: 900,
-    hover: 60,
+    hover: 100,
     layout: 400,
     expand: 240,
-    sort: 400,
-    ease: "steps(6, end)",
-    layoutEase: "cubic-bezier(0.2, 0.7, 0.1, 1)",
+    sort: 360,
+    ease: "cubic-bezier(0.2, 0.7, 0.1, 1)",
     notes: [
-      { name: "Feed", what: "Panels print downward in steps when they come into view. Charts wipe left to right and the money flow runs from sources to recipients.", timing: "360 ms a panel, 50 ms apart" },
-      { name: "Stack", what: "Cells light from the centre outward and grow to their storey.", timing: "1.4 s, on the GPU" },
-      { name: "Jack up", what: "Plan to Stacks raises every stack and swings the view to a fixed isometric angle.", timing: "0.9 s" },
-      { name: "Steps", what: "Rows, folds and toggles move in six steps with no easing. Layout changes stay smooth.", timing: "six steps" },
-      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+      { on: "entry", name: "Fade in", what: "A bay fades in when it comes into view. Charts draw left to right and the money flow runs from sources to recipients.", timing: "420 ms a bay, 60 ms apart" },
+      { on: "reveal", name: "Light up", what: "Keys light from the centre outward and rise to their height.", timing: "1.4 s, on the GPU" },
+      { on: "morph", name: "Raise", what: "Plan to Board raises every key and tips the view.", timing: "0.9 s" },
+      { on: "selector", name: "Selector", what: "The switch turns one detent a click and moves to the next motion level.", timing: "240 ms, in three steps" },
+      { on: "money", name: "Money", what: "Dashes march along the routed ties and the ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -776,11 +788,11 @@ const massif: Theme = {
     sort: 420,
     ease: "cubic-bezier(0.25, 0.6, 0.15, 1)",
     notes: [
-      { name: "Lock on", what: "Corner brackets close in on each panel as it comes into view while the glass fades up.", timing: "600 ms a panel, 55 ms apart" },
-      { name: "Survey", what: "The point field lights from the centre outward, then stems and routes follow.", timing: "2 s, on the GPU" },
-      { name: "Uplift", what: "Flat to Relief raises the ground under the points and drops the camera to a low angle.", timing: "1.5 s" },
-      { name: "Orbit", what: "The camera drifts around the landform. Near and far points go soft with distance.", timing: "40 s a cycle" },
-      { name: "Money", what: "Pulses travel along routes and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
+      { on: "entry", name: "Lock on", what: "Corner brackets close in on each panel as it comes into view while the glass fades up.", timing: "600 ms a panel, 55 ms apart" },
+      { on: "reveal", name: "Survey", what: "The point field lights from the centre outward, then stems and routes follow.", timing: "2 s, on the GPU" },
+      { on: "morph", name: "Uplift", what: "Flat to Relief raises the ground under the points and drops the camera to a low angle.", timing: "1.5 s" },
+      { on: "rest", name: "Orbit", what: "The camera drifts around the landform. Near and far points go soft with distance.", timing: "40 s a cycle" },
+      { on: "money", name: "Money", what: "Pulses travel along routes and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
     ],
   },
 };
@@ -909,11 +921,11 @@ const phosphor: Theme = {
     sort: 380,
     ease: "cubic-bezier(0.3, 0, 0.2, 1)",
     notes: [
-      { name: "Strike", what: "Each frame flickers on like a tube warming up when it comes into view. Lines draw and the money flow wipes from sources to recipients.", timing: "500 ms a panel, 50 ms apart" },
-      { name: "Trace", what: "The beam draws the rings from the pole outward, then each tie from source to target.", timing: "1.9 s, on the GPU" },
-      { name: "Inflate", what: "Scope to Dome lifts the rings into latitudes and tips the camera in one move.", timing: "1.3 s" },
-      { name: "Sweep", what: "The meridians turn around the pole while the camera swings slowly. Both stop under the pointer.", timing: "60 s a cycle" },
-      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+      { on: "entry", name: "Strike", what: "Each frame flickers on like a tube warming up when it comes into view. Lines draw and the money flow wipes from sources to recipients.", timing: "500 ms a panel, 50 ms apart" },
+      { on: "reveal", name: "Trace", what: "The beam draws the rings from the pole outward, then each tie from source to target.", timing: "1.9 s, on the GPU" },
+      { on: "morph", name: "Inflate", what: "Scope to Dome lifts the rings into latitudes and tips the camera in one move.", timing: "1.3 s" },
+      { on: "rest", name: "Sweep", what: "The meridians turn around the pole while the camera swings slowly. Both stop under the pointer.", timing: "60 s a cycle" },
+      { on: "money", name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
     ],
   },
 };
@@ -921,21 +933,21 @@ const phosphor: Theme = {
 export const THEMES: Theme[] = [vellum, floe, consoleTheme, orrery, massif, phosphor];
 export const themeById = (id: string) => THEMES.find((t) => t.id === id) ?? vellum;
 
-export interface Interaction {
-  name: string;
-  what: string;
-  timing: (m: Motion) => string;
-  action?: { label: string; run: string };
-}
+// Notes on how the page answers the reader. Timings come from the theme.
+const RESPONSES: Record<string, { name: string; what: string; timing: (m: Motion) => string }> = {
+  row: { name: "Open a row", what: "The row opens in place and moves the later rows down.", timing: (m) => `${m.expand} ms` },
+  sort: { name: "Sort", what: "Rows travel to their new places so one can be followed.", timing: (m) => `${m.sort} ms, rows 14 ms apart` },
+  full: { name: "Full size", what: "The panel takes the stage and the rest fold to tiles in a rail.", timing: (m) => `${m.layout} ms` },
+  dossier: { name: "Dossier", what: "The entity's dossier opens in a drawer and the board narrows to make room.", timing: (m) => `${m.layout} ms` },
+  linked: { name: "Linked marks", what: "Pointing at a row lights its counterpart in the view beside it.", timing: () => "at once" },
+  measure: { name: "Measure", what: "Dragging across the timeline counts what falls inside.", timing: () => "follows the pointer" },
+  commit: { name: "Commit", what: "Adding to the brief steps the count in the top bar.", timing: (m) => `${m.expand} ms` },
+};
 
-// `run` is a command the app shell carries out when the reader presses the button beside the entry.
-export const INTERACTIONS: Interaction[] = [
-  { name: "Tooltip", what: "Data marks answer at once. Labels and icon buttons wait a third of a second, then the next ones open without waiting.", timing: (m) => `0 to 350 ms, fade ${m.hover} ms` },
-  { name: "Open a row", what: "Rows open in place and move the later rows down.", timing: (m) => `${m.expand} ms`, action: { label: "Open a filing", run: "filing" } },
-  { name: "Sort", what: "Rows travel to their new places so one can be followed.", timing: (m) => `${m.sort} ms, rows 14 ms apart`, action: { label: "Sort by amount", run: "sort" } },
-  { name: "Full size", what: "A panel takes the stage and the rest fold to tiles in a rail.", timing: (m) => `${m.layout} ms`, action: { label: "Stage the network", run: "stage" } },
-  { name: "Dossier", what: "An entity name opens its dossier in a drawer and the board narrows to make room.", timing: (m) => `${m.layout} ms`, action: { label: "Open Petra Voss", run: "dossier" } },
-  { name: "Linked marks", what: "Pointing at a mark lights its counterparts elsewhere.", timing: () => "0 ms" },
-  { name: "Measure", what: "Dragging across the timeline counts what falls inside.", timing: () => "follows the pointer", action: { label: "Measure the 90 days", run: "brush" } },
-  { name: "Commit", what: "Add to brief steps the count in the top bar.", timing: (m) => `${m.expand} ms` },
-];
+export function notesFor(theme: Theme): Record<string, Note> {
+  const m = theme.motion;
+  const out: Record<string, Note> = {};
+  for (const [k, r] of Object.entries(RESPONSES)) out[k] = { name: r.name, what: r.what, timing: r.timing(m) };
+  for (const n of m.notes) out[n.on] = n;
+  return out;
+}

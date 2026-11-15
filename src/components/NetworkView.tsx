@@ -465,12 +465,12 @@ export function NetworkView({ theme }: { theme: Theme }) {
         {KEY.map((k) => (
           <li key={k.label}><Glyph kind={k.kind} sector={k.sector} />{k.label}</li>
         ))}
-        <li className="key-line money"><i />Money</li>
+        <li className="key-line money" data-note="money"><i />Money</li>
         <li className="key-line contact"><i />Contact</li>
         {deep?.form === "armillary" ? <li className="key-line stem"><i />Stem height is weight</li> : null}
       </ul>
       <div className="viz-tr" data-keepout>
-        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan" }]} /> : null}
+        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan", note: "morph rest" }]} /> : null}
         <Segmented label="Graph size" value={density} onChange={change} options={[{ value: "case", label: "Case file" }, { value: "5k", label: "5,000" }, { value: "100k", label: "100,000" }]} />
         <div className="viz-zoom">
           <button type="button" aria-label="Zoom in" data-tip="Zoom in (Ctrl-scroll)" onClick={() => ctl.current?.zoom(1.35)}>+</button>
@@ -483,11 +483,11 @@ export function NetworkView({ theme }: { theme: Theme }) {
           <p className="readout">
             <b>{readout.name}</b>
             <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} ties</span>
-            {readout.id && inspected !== readout.id ? <button type="button" className="btn" onClick={() => ws.inspect(readout.id!)}>Open dossier</button> : null}
+            {readout.id && inspected !== readout.id ? <button type="button" className="btn" data-note="dossier" onClick={() => ws.inspect(readout.id!)}>Open dossier</button> : null}
           </p>
         ) : null}
       </div>
-      <dl className="viz-br" data-keepout>
+      <dl className="viz-br" data-keepout data-note="reveal">
         {stats ? (
           <>
             <div><dt>Entities</dt><dd>{stats.n.toLocaleString()}</dd></div>

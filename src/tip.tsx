@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import type { Note } from "./themes";
 
 type Anchor = { x: number; y: number } | Element;
-interface TipState { anchor: Anchor; content: ReactNode; card?: boolean }
+interface TipState { anchor: Anchor; content: ReactNode; card?: boolean; note?: boolean }
 
 let state: TipState | null = null;
 let timer = 0;
@@ -21,9 +22,9 @@ const WARM = 600;
 
 export const tip = {
   // A point anchor places the tip beside the pointer. An element anchor centres the tip above the element.
-  show(anchor: Anchor, content: ReactNode, opts: { card?: boolean; wait?: boolean } = {}) {
+  show(anchor: Anchor, content: ReactNode, opts: { card?: boolean; wait?: boolean; note?: boolean } = {}) {
     clearTimeout(timer);
-    const next = { anchor, content, card: opts.card };
+    const next = { anchor, content, card: opts.card, note: opts.note };
     if (!opts.wait || state || performance.now() - lastHide < WARM) set(next);
     else timer = window.setTimeout(() => set(next), WAIT);
   },
@@ -33,7 +34,7 @@ export const tip = {
   },
 };
 
-export function TipLayer() {
+export function TipLayer({ notes }: { notes: Record<string, Note> }) {
   const s = useSyncExternalStore((f) => { subs.add(f); return () => subs.delete(f); }, () => state);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -57,16 +58,29 @@ export function TipLayer() {
     el.style.transform = `translate(${Math.round(x)}px, ${Math.round(Math.max(8, y))}px)`;
   }, [s]);
 
+  const book = useRef(notes);
+  book.current = notes;
+
   // Any element with a data-tip attribute gets a text tooltip. data-tip-now skips the wait, for data marks.
+  // data-note names notes on how the element moves or answers, which go under the text in their own style.
   useEffect(() => {
     let from: Element | null = null;
     const over = (e: Event) => {
-      const el = (e.target as Element).closest?.("[data-tip]");
+      const el = (e.target as Element).closest?.("[data-tip], [data-note]");
       if (e.type === "focusin" && !(e.target as Element).matches(":focus-visible")) return;
       if (el === from) return;
       from = el;
-      if (el) tip.show(el, el.getAttribute("data-tip"), { wait: !el.hasAttribute("data-tip-now") && e.type !== "focusin" });
-      else tip.hide();
+      if (!el) return tip.hide();
+      const text = el.getAttribute("data-tip");
+      const found = (el.getAttribute("data-note") ?? "").split(" ").flatMap((k) => book.current[k] ?? []);
+      if (!text && !found.length) return tip.hide();
+      const content = found.length ? (
+        <>
+          {text ? <span className="tip-lead">{text}</span> : null}
+          {found.map((n) => <span key={n.name} className="tip-note"><b>{n.name}</b>{n.what}<i>{n.timing}</i></span>)}
+        </>
+      ) : text;
+      tip.show(el, content, { wait: !el.hasAttribute("data-tip-now") && e.type !== "focusin", note: found.length > 0 });
     };
     const out = () => { from = null; tip.hide(); };
     document.addEventListener("pointerover", over);
@@ -84,7 +98,7 @@ export function TipLayer() {
   }, []);
 
   return createPortal(
-    s ? <div ref={ref} className={`tip${s.card ? " card" : ""}`} role="tooltip">{s.content}</div> : null,
+    s ? <div ref={ref} className={`tip${s.card ? " card" : ""}${s.note ? " note" : ""}`} role="tooltip">{s.content}</div> : null,
     document.body,
   );
 }

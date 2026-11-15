@@ -209,12 +209,12 @@ export function MapView({ theme }: { theme: Theme }) {
         {status === "unsupported" ? <p className="viz-msg">This view draws with WebGPU, which this browser does not provide.</p> : null}
         {deep ? (
           <div className="viz-tr">
-            <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.mapLabel }]} />
+            <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.mapLabel, note: "morph rest" }]} />
           </div>
         ) : null}
       </div>
       <aside className="map-side">
-        <h4 className="sub-h">Largest donor states</h4>
+        <h4 className="sub-h" data-note="linked">Largest donor states</h4>
         <ol className="rank">
           {top.map(([code, v]) => (
             <li key={code} style={{ ["--k" as string]: top.findIndex(([c]) => c === code) * 2 }} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
@@ -227,7 +227,7 @@ export function MapView({ theme }: { theme: Theme }) {
         <p className="note">Eight states gave {Math.round((sum(top) / sum(all)) * 100)}% of the {fmtMoney(sum(all))} total.</p>
         <ul className="map-key">
           <li className="key-dots"><span><i /><i /><i /></span>{deep.mapKey}</li>
-          <li className="key-line money"><i />Transfer</li>
+          <li className="key-line money" data-note="money"><i />Transfer</li>
           <li className="key-ring"><i />Event</li>
         </ul>
       </aside>

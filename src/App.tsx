@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { THEMES, themeById } from "./themes";
+import { notesFor, THEMES, themeById } from "./themes";
 import type { Theme } from "./themes";
 import { Panel, Segmented } from "./components/primitives";
 import { Crumbs } from "./components/Crumbs";
@@ -13,7 +13,6 @@ import { Timeline } from "./components/Timeline";
 import { MoneyFlow, Multiples, SlopeChart, SpendChart } from "./components/Charts";
 import { DocList, DocViewer, FilingsTable, Finding } from "./components/Records";
 import { Controls } from "./components/Controls";
-import { MotionSheet } from "./components/Motion";
 import { Inspector } from "./components/Inspector";
 import { TipLayer } from "./tip";
 import { getState, useWs, ws } from "./workspace";
@@ -55,7 +54,7 @@ function BriefMenu() {
 function BriefButton() {
   const count = useWs((s) => s.brief.length);
   return (
-    <button type="button" className={`brief${count ? " has" : ""}`} popoverTarget="brief-list" data-tip="Items collected for the written brief">
+    <button type="button" className={`brief${count ? " has" : ""}`} popoverTarget="brief-list" data-tip="Items collected for the written brief" data-note="commit">
       Brief <b key={count} className="num">{count}</b>
     </button>
   );
@@ -66,6 +65,7 @@ function MotionControl() {
   return (
     <div className="motion-ctl">
       <span className="label">Motion</span>
+      <button type="button" className="knob" data-note="selector" aria-label={`Motion is ${MOTION_LEVELS[level].name}. Turn to the next level`} style={{ ["--turn" as string]: level }} onClick={() => ws.setLevel((level + 1) % MOTION_LEVELS.length)}><i /></button>
       <Segmented
         label="Motion" value={String(level)} onChange={(v) => ws.setLevel(+v)}
         options={MOTION_LEVELS.map((l) => ({ value: String(l.id), label: l.name, tip: l.what }))}
@@ -85,24 +85,18 @@ function Frame({ children }: { children: ReactNode }) {
   return (
     <div className="shell" data-inspect={inspecting ? "" : undefined}>
       <main className="board" data-stage={stage ?? undefined}>{children}</main>
-      <footer className="foot">All names and figures are invented.</footer>
+      <footer className="foot">All names and figures are invented. The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</footer>
     </div>
   );
 }
 
-const act = (command: string) => {
-  if (command === "stage") ws.setStage("01");
-  else if (command === "dossier") ws.inspect("voss");
-  else if (command === "brush") { ws.reveal("05"); ws.run("brush"); }
-  else { ws.reveal("10"); ws.run(command); }
-};
-const replay = () => { ws.setStage(null); scrollTo({ top: 0 }); ws.replay(); };
 const giving = Object.values(STATE_GIVING).reduce((a, v) => a + v, 0);
 const T = PANEL_TITLES;
 
 export function App() {
   const [id, setId] = useState(() => themeById(location.hash.slice(1)).id);
   const theme = themeById(id);
+  const notes = useMemo(() => notesFor(theme), [theme]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -114,7 +108,6 @@ export function App() {
     for (const [k, ms] of Object.entries({ enter: m.enter, stagger: m.stagger, hover: m.hover, reveal: m.reveal, layout: m.layout, expand: m.expand, sort: m.sort }))
       root.style.setProperty(k === "stagger" ? "--stagger" : `--dur-${k}`, `${ms}ms`);
     root.style.setProperty("--ease", m.ease);
-    root.style.setProperty("--ease-layout", m.layoutEase ?? m.ease);
     history.replaceState(null, "", `#${theme.id}`);
   }, [theme]);
 
@@ -144,7 +137,7 @@ export function App() {
           </pattern>
         </defs>
       </svg>
-      <TipLayer />
+      <TipLayer notes={notes} />
       <header className="switcher">
         <div className="themes" role="group" aria-label="Theme">
           {THEMES.map((t, i) => (
@@ -175,7 +168,6 @@ export function App() {
         <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
         <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
         <Panel fig="14" title={T["14"]} glance="Search, filters, actions, readouts"><Controls /></Panel>
-        <Panel fig="15" title={T["15"]} glance="Timings and the patterns to try"><MotionSheet theme={theme} onRun={act} onReplay={replay} /></Panel>
       </Frame>
       <Inspector />
     </>

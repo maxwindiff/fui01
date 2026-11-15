@@ -5,6 +5,7 @@ import type { Kind, Party, Sector } from "../data";
 import { motion } from "../motion";
 import { tip } from "../tip";
 import { useWs, ws } from "../workspace";
+import { PanelIcon } from "../icons";
 
 export function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -214,12 +215,12 @@ export function Panel({
       onClick={tile ? () => ws.setStage(fig) : undefined}
     >
       <header className="panel-h">
-        <span className="panel-fig" aria-hidden="true">{fig}</span>
-        <h2 className="panel-title">{title}</h2>
+        <PanelIcon fig={fig} />
+        <h2 className="panel-title" data-note={tile ? undefined : "entry"}>{title}</h2>
         {meta && !tile ? <span className="panel-meta">{meta}</span> : null}
         <button
           type="button" className="panel-x" aria-label={staged ? `Return ${title} to the board` : `Open ${title} at full size`}
-          data-tip={staged ? "Return to the board (Esc)" : "Open at full size"}
+          data-tip={staged ? "Return to the board (Esc)" : "Open at full size"} data-note="full"
           onClick={(e) => { e.stopPropagation(); ws.setStage(staged ? null : fig); }}
         >
           <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true">
@@ -286,11 +287,11 @@ export function useFlip<T extends HTMLElement>(order: unknown) {
   return [ref, capture] as const;
 }
 
-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; tip?: string }[]; onChange: (v: T) => void; label: string }) {
+export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; tip?: string; note?: string }[]; onChange: (v: T) => void; label: string }) {
   return (
     <div className="seg" role="radiogroup" aria-label={label}>
       {options.map((o) => (
-        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} data-tip={o.tip} onClick={() => onChange(o.value)}>
+        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} data-tip={o.tip} data-note={o.note} onClick={() => onChange(o.value)}>
           {o.label}
         </button>
       ))}

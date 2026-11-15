@@ -2,7 +2,6 @@ import { useRef, useState } from "react";
 import type { PointerEvent as RPointerEvent } from "react";
 import { T0, T1, TL_CAREER, TL_CONTACTS, TL_COOLING, TL_EVENTS, TL_GIFTS, TL_HILL, TL_WINDOW, WINDOW_CONTACTS, fmtMoney } from "../data";
 import { tip, TipRow } from "../tip";
-import { useCommand } from "../workspace";
 import { usePanel, useSize } from "./primitives";
 
 const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -31,7 +30,6 @@ export function Timeline() {
   const left = 128, right = 18;
   const x = (t: number) => left + ((t - T0) / (T1 - T0)) * (w - left - right);
   const time = (px: number) => Math.max(T0, Math.min(T1, T0 + ((px - left) / (w - left - right)) * (T1 - T0)));
-  useCommand("brush", () => setBrush(TL_WINDOW));
 
   const local = (e: RPointerEvent<SVGRectElement>) => time(e.clientX - e.currentTarget.ownerSVGElement!.getBoundingClientRect().left);
   const down = (e: RPointerEvent<SVGRectElement>) => {
@@ -91,7 +89,7 @@ export function Timeline() {
           </>
         ) : (
           <>
-            <span>Drag to measure</span>
+            <span data-note="measure">Drag to measure</span>
             <button type="button" className="btn quiet" onClick={() => setBrush(TL_WINDOW)}>90 days before the award</button>
           </>
         )}
