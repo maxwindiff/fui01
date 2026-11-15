@@ -5,6 +5,8 @@ import { View, haze, entry } from "./view.wgsl";
 // Corners in order: origin, +u, +v, far corner. p0.w and p1.w hold the world size along u and v, p2.w the entry delay.
 // color fills the sheet, ink draws its dot grid and border.
 // style: dot grid spacing in world units, dot alpha, border alpha, border width px
+// A negative spacing marks a cast shadow. Its corners carry a height in z and slide along ink.xy by that height, so the
+// shadow lengthens as the scene lifts. It writes the ground colour darkened and is drawn with a min blend.
 struct Quad {
   p0: vec4f,
   p1: vec4f,
@@ -29,7 +31,8 @@ struct VOut {
     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0));
   let q = quads[i];
   let c = corners[v];
-  let p = mix(mix(q.p0.xyz, q.p1.xyz, c.x), mix(q.p2.xyz, q.p3.xyz, c.x), c.y);
+  var p = mix(mix(q.p0.xyz, q.p1.xyz, c.x), mix(q.p2.xyz, q.p3.xyz, c.x), c.y);
+  if (q.style.x < 0.0) { p = vec3f(p.xy + q.ink.xy * p.z * view.lift * entry(view, q.p2.w), 0.0); }
   let clip = view.proj * vec4f(p.xy, p.z * view.lift, 1.0);
   var out: VOut;
   out.position = vec4f(clip.xy / clip.w, 0.5, 1.0);
@@ -41,6 +44,10 @@ struct VOut {
 
 @fragment fn fs_main(in: VOut) -> @location(0) vec4f {
   let q = quads[in.inst];
+  if (q.style.x < 0.0) {
+    let k = q.color.a * pow(clamp(1.0 - in.uv.y, 0.0, 1.0), 0.9) * smoothstep(0.0, 0.25, view.lift);
+    return vec4f(mix(view.bg.rgb, q.color.rgb, k), 1.0);
+  }
   let size = vec2f(q.p0.w, q.p1.w);
   let world = in.uv * size;
   let ppw = view.focal / in.depth;

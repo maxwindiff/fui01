@@ -44,7 +44,7 @@ export function MapView({ theme }: { theme: Theme }) {
       if (!w || !h) return;
       const sway = deep && on && motion.level >= 2 ? deep.sway * (motion.level === 3 ? 0.9 : 0.5) * Math.sin((idle / deep.swayPeriod) * Math.PI * 2) : 0;
       const pitch = TOP_DOWN + ((deep?.mapPitch ?? TOP_DOWN) + tilt - TOP_DOWN) * lift;
-      const k = 1 + 0.04 * lift;
+      const k = 1 + ((deep?.mapScale ?? 1.04) - 1) * lift;
       scene.lift = lift;
       scene.aperture = (deep?.aperture ?? 0) * 0.6 * lift;
       scene.fogFloor = 1 - (1 - (deep?.fogFloor ?? 1)) * 0.7 * lift;
@@ -73,10 +73,13 @@ export function MapView({ theme }: { theme: Theme }) {
     const push = () => {
       if (!scene || !model) return;
       const b = buildMapBuffers(model, theme, hover);
-      scene.setLayer(0, b.quads.data, b.quads.count);
-      scene.setLayer(1, b.dots, b.dotCount);
-      scene.setLayer(2, b.lines.data, b.lines.count);
-      scene.setLayer(3, b.top, b.topCount);
+      scene.setLayer("quads", b.quads.data, b.quads.count);
+      scene.setLayer("dots", b.dots, b.dotCount);
+      scene.setLayer("lines", b.lines.data, b.lines.count);
+      scene.setLayer("shadows", b.shadows.data, b.shadows.count);
+      scene.setLayer("boxes", b.boxes.data, b.boxes.count);
+      scene.setLayer("arcs", b.arcs.data, b.arcs.count);
+      scene.setLayer("top", b.top, b.topCount);
       return b;
     };
     const move = (e: PointerEvent) => {
@@ -127,12 +130,16 @@ export function MapView({ theme }: { theme: Theme }) {
     Promise.all([getGpu(), loadMap()]).then(([gpu, m]) => {
       if (gone) return;
       model = m;
+      const g = theme.gpu;
       scene = new Scene(gpu, el, [
-        { kind: "quads" },
-        { kind: "marks", blend: theme.gpu.additive ? "additive" : "premultiplied" },
-        { kind: "segs" },
-        { kind: "marks" },
-      ]);
+        { kind: "quads", name: "quads" },
+        { kind: "marks", name: "dots", blend: g.additive ? "additive" : "premultiplied" },
+        { kind: "segs", name: "lines", blend: g.additiveBase ? "additive" : "premultiplied", glow: (g.glow ?? 0) * (g.additiveBase ? 0.7 : 0) },
+        ...(g.block ? [{ kind: "quads", name: "shadows", blend: "darken" }, { kind: "boxes", name: "boxes" }] as const : []),
+        { kind: "segs", name: "arcs", blend: g.additive ? "additive" : "premultiplied", glow: g.glow },
+        { kind: "marks", name: "top" },
+      ], { solid: !!g.block });
+      if (deep?.fov) scene.cam.fov = deep.fov;
       scene.bg = rgba(theme.gpu.vizBg);
       scene.animated = true;
       scene.onTick = (now, dt) => {
@@ -153,9 +160,10 @@ export function MapView({ theme }: { theme: Theme }) {
         labelBox.appendChild(span);
         nodes.push({ el: span, x, y, z, side });
       };
-      for (const c of Object.values(m.cities)) add("map-label", c.name, c.x, c.y, 0, c.side);
-      for (const ev of MAP_EVENTS) add("map-label event", ev.text, m.cities[ev.city].x, m.cities[ev.city].y, deep?.form === "armillary" ? 80 : 0, deep?.form === "armillary" ? "e" : "t");
       const b = push()!;
+      // At the low angle of a relief New York would sit on top of Washington, so its label goes above the mark.
+      for (const [id, c] of Object.entries(m.cities)) add("map-label", c.name, c.x, c.y, b.cityZ[id], deep?.form === "relief" && id === "nyc" ? "t" : c.side);
+      for (const ev of MAP_EVENTS) add("map-label event", ev.text, m.cities[ev.city].x, m.cities[ev.city].y, deep?.form === "armillary" ? 80 : b.cityZ[ev.city], deep?.form === "armillary" ? "e" : "t");
       if (deep?.form === "strata")
         for (const i of [...b.spikes].sort((p, q) => m.states[q].value - m.states[p].value).slice(0, 7))
           add("map-label spike", `${m.states[i].code} ${fmtMoney(m.states[i].value)}`, m.states[i].cx, m.states[i].cy, spikeHeight(m, i), "s");
@@ -201,7 +209,7 @@ export function MapView({ theme }: { theme: Theme }) {
         {status === "unsupported" ? <p className="viz-msg">This view draws with WebGPU, which this browser does not provide.</p> : null}
         {deep ? (
           <div className="viz-tr">
-            <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.form === "strata" ? "Spikes" : "Terrain" }]} />
+            <Segmented label="Arrangement" value={space} onChange={(v) => { setSpace(v); api.current?.setDeep(v === "deep"); }} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: deep.mapLabel }]} />
           </div>
         ) : null}
       </div>
@@ -218,7 +226,7 @@ export function MapView({ theme }: { theme: Theme }) {
         </ol>
         <p className="note">Eight states gave {Math.round((sum(top) / sum(all)) * 100)}% of the {fmtMoney(sum(all))} total.</p>
         <ul className="map-key">
-          <li className="key-dots"><span><i /><i /><i /></span>{deep?.form === "armillary" ? "Height is giving" : "Spike height is giving"}</li>
+          <li className="key-dots"><span><i /><i /><i /></span>{deep.mapKey}</li>
           <li className="key-line money"><i />Transfer</li>
           <li className="key-ring"><i />Event</li>
         </ul>

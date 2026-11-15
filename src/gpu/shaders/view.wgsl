@@ -13,6 +13,7 @@ export struct View {
   aperture: f32,
   reveal: f32,
   fogFloor: f32,
+  glow: f32,
 }
 
 // Blur radius in physical pixels for a point at view depth w.

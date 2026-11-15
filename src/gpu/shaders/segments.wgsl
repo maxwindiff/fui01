@@ -42,7 +42,7 @@ fn spin(p: vec3f, rate: f32) -> vec3f {
   let a = ca.xy / ca.w * view.size * 0.5;
   let b = cb.xy / cb.w * view.size * 0.5;
   let blur = max(defocus(view, ca.w), defocus(view, cb.w));
-  let hw = max(s.a.w * view.dpr, 1.0) * 0.5 + 1.5 + blur;
+  let hw = max(s.a.w * view.dpr, 1.0) * 0.5 + 1.5 + blur + view.glow * view.dpr * 2.6;
   let ab = b - a;
   let len = max(length(ab), 1e-5);
   let dir = ab / len;
@@ -71,8 +71,15 @@ fn spin(p: vec3f, rate: f32) -> vec3f {
   let depth = mix(in.depth.x, in.depth.y, h);
   let blur = defocus(view, depth);
   let f = 0.7 + blur;
-  var a = (1.0 - smoothstep(-f, f, d)) * thin * s.color.a * (w / (w + blur * 1.6));
+  let core = (1.0 - smoothstep(-f, f, d)) * thin * (w / (w + blur * 1.6));
+  var a = core * s.color.a;
   var rgb = s.color.rgb;
+  if (view.glow > 0.0) {
+    // A phosphor trace: a halo that falls off outside the stroke and a core that burns toward white.
+    let halo = exp(-max(d, 0.0) / (view.glow * view.dpr * 0.5)) * 0.4;
+    a = max(core, halo) * s.color.a;
+    rgb = mix(rgb, vec3f(1.0), core * 0.5 * s.color.a);
+  }
 
   let t = mix(s.anim.z, s.anim.w, h);
   if (s.b.w > 0.0) {

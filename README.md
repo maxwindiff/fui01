@@ -7,16 +7,31 @@ npm install
 npm run dev      # http://127.0.0.1:5183
 ```
 
-Keys 1 and 2 switch themes. The theme id also goes in the URL hash, for example `#orrery`.
+Keys 1 to 6 switch themes. The theme id also goes in the URL hash, for example `#orrery`.
 
 ## Themes
 
 | Key | Theme | Mode | Idea |
 |---|---|---|---|
 | 1 | Vellum | light | Graphite hairlines on drafting film, indigo for government, orange for money, serif reading text with margin notes. The network pulls apart into three stacked sheets of film. |
-| 2 | Orrery | dark | Brass rings on lampblack, the subject at the centre, everything else placed by degree of separation. Ring plates step down from the centre and each entity stands on a stem. |
+| 2 | Floe | light | A white massing model on a cool survey sheet with a dot grid. Panels have no frames, only a heavy rule under a numbered tab. Entities and states stand as white blocks under a low sun, with orange for money. |
+| 3 | Console | light | A printed manual on cream grid paper: heavy grotesque titles and figures, thick rules, mustard tabs. The two GPU views are dark screens set into the page, drawn as stacks of flat-coloured cells at a fixed isometric angle. Small movements run in six steps. |
+| 4 | Orrery | dark | Brass rings on lampblack, the subject at the centre, everything else placed by degree of separation. Ring plates step down from the centre and each entity stands on a stem. |
+| 5 | Massif | dark | Glass panels with red corner brackets on basalt. The ground of the network rises where entities crowd together and is drawn as a field of lit points with depth of field. One red carries the money as glowing routes. |
+| 6 | Phosphor | dark | A vector display with no fills: red frames, amber labels and money, green data. The network sits on a wire dome with the subject at the pole, and the states extrude as wire outlines. |
 
-Panels are flat in both themes. Depth is used inside the two GPU views only, where it carries data: sector in Vellum's sheets, degree of separation and weight in Orrery's plates and stems, giving in the map's spikes and terrain. Each of those views has a control that returns it to a flat plan.
+Floe, Console, Massif and Phosphor come from the reference folders `arctic`, `retro`, `terrain` and `crt`.
+
+Panels are flat in every theme. Depth is used inside the two GPU views only, where it carries data, and each view has a control that returns it to a flat plan:
+
+| Theme | Network | Map |
+|---|---|---|
+| Vellum | a sheet per sector | a spike per state |
+| Floe | block height is weight in the case | block height is giving |
+| Console | storeys are weight | storeys are giving, in four bands |
+| Orrery | plate is degree of separation, stem is weight | plateau height is giving |
+| Massif | ground height is the density of entities | ground height is giving, smoothed across state lines |
+| Phosphor | latitude on the dome is degree of separation | outline height is giving |
 
 Shape carries the kind of entity and colour carries the sector, in every theme and in both the GPU views and the inline glyphs:
 
@@ -35,13 +50,16 @@ The page draws with three technologies, chosen by mark count.
 2. **SVG** for charts with up to a few thousand marks: timeline, money flow, slopegraph, sparklines. These read their colours and stroke weights from CSS variables, so they follow the theme with no code.
 3. **WebGPU through [vgpu](https://vgpu.sh)** for the network and the map, where mark counts reach the hundreds of thousands.
 
-The GPU layer draws three primitives as instanced quads, with the data in storage buffers and one draw call per layer:
+The GPU layer draws four primitives as instanced geometry, with the data in storage buffers and one draw call per layer:
 
-- `marks.wgsl`: node glyphs as signed-distance shapes, with stroke, knockout fill and halo
-- `segments.wgsl`: ties, rings and borders as capsules, with dashes that march and pulses that travel
-- `quads.wgsl`: translucent sheets with a dot grid
+- `marks.wgsl`: node glyphs and terrain points as signed-distance shapes, with stroke, knockout fill and halo
+- `segments.wgsl`: ties, rings, borders and wire outlines as capsules, with dashes that march, pulses that travel and an optional phosphor glow
+- `quads.wgsl`: translucent sheets with a dot grid, and the cast shadows of blocks
+- `boxes.wgsl`: solid blocks with flat shading per face and an outline
 
-All three share `view.wgsl`: an orbit camera, defocus by distance from the focal plane, haze, and the entry reveal. A flat view is the same camera looking straight down with the heights scaled to zero. Flat and Strata, or Plan and Armillary, turn into one another this way: the builder writes each node's height once, and a `lift` uniform scales it while the camera tips.
+A scene is a list of named layers. A builder writes every kind of geometry it has, and a scene without a layer of that name skips the write, so a theme picks its look by the layers it declares and by `gpu` in `themes.ts`. The block themes are the only ones with solid geometry: their scenes add a depth buffer and 4x multisampling, clear to an opaque ground, and blend shadows with `min` so that overlapping shadows do not add up.
+
+All four share `view.wgsl`: an orbit camera, defocus by distance from the focal plane, haze, and the entry reveal. A flat view is the same camera looking straight down with the heights scaled to zero. Each pair of arrangements (Flat and Strata, Plan and Massing, Scope and Dome and so on) turns into one another this way: the builder writes each node's height once, and a `lift` uniform scales it while the camera tips.
 
 Labels are DOM elements placed by projecting node positions on the CPU through the same camera, with a greedy pass that drops a label when its slot is taken. Picking also runs on the CPU.
 
@@ -66,7 +84,9 @@ Costs to weigh:
 
 In headless Chrome on this machine the network view held the 60 Hz frame interval (16.7 ms between frames) with 100,000 entities and 300,000 tie segments, in the flat arrangement and in the deep one with defocus on. The frame interval is capped by the display, so this shows the absence of dropped frames and says nothing about headroom. The Graph size control in the network panel reruns the test.
 
-The production build is 184 kB of JavaScript after gzip, plus 31 kB for the state outlines, loaded on demand.
+With 100,000 entities the block, relief and dome arrangements measured between 16.6 and 23 ms a frame in the same setup.
+
+The production build is 195 kB of JavaScript and 24 kB of CSS after gzip, plus 31 kB for the state outlines, loaded on demand. Font files load only for the theme on screen.
 
 ## Motion
 
@@ -81,7 +101,9 @@ The top bar has four motion levels, kept in `localStorage` and defaulting to Sti
 
 Changing level replays the entry of the panels on screen, so the levels can be compared on the spot. `motion.ts` holds the level. CSS reads it from `data-motion`, `data-entry` and `data-ambient` on the root, and the GPU code reads `motion.level`.
 
-Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it. Entry is built like this:
+Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it. The frame animation differs by theme: Vellum wipes in from the left, Floe runs its header rule out from the tab, Console prints downward in steps, Orrery fades up under a sweeping tick scale, Massif closes its corner brackets, and Phosphor flickers on. Console sets `ease` to `steps(6, end)`, and layout transitions take `layoutEase` so that they stay smooth.
+
+Entry is built like this:
 
 - `Panel` watches itself with one shared `IntersectionObserver`. A panel stays hidden (`data-pending`) until it comes into view, then plays its frame animation once (`data-enter="frame"`). Panels that arrive together are staggered by their order in the batch.
 - A panel that goes onto the stage plays only its content (`data-enter="content"`), after the layout transition has finished.
@@ -131,9 +153,10 @@ src/workspace.tsx        shared store and the view-transition helper
 src/tip.tsx              the tooltip layer
 src/gpu/scene.ts         camera, layers, frame loop, buffer writers
 src/gpu/network.ts       layouts and buffers for the network
-src/gpu/map.ts           state outlines, dot grid, spikes, terrain
+src/gpu/map.ts           state outlines, dot grid, cell lattice, and the map arrangements
+src/gpu/field.ts         height field for the relief arrangements
 src/gpu/shaders/         WGSL
 src/components/          one file per group of elements
 src/styles/base.css      shared styles, a block per theme, then motion, interaction and layout transitions
-references/              reference images
+references/              reference images, a folder per style
 ```

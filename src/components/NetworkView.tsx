@@ -45,12 +45,16 @@ class NetController {
   ) {
     this.deep = theme.gpu.deep;
     this.deepOn = !!this.deep;
+    const g = theme.gpu;
     this.scene = new Scene(gpu, canvas, [
-      { kind: "quads" },
-      { kind: "segs" },
-      { kind: "segs", blend: theme.gpu.additive ? "additive" : "premultiplied" },
-      { kind: "marks" },
-    ]);
+      { kind: "quads", name: "quads" },
+      { kind: "marks", name: "surface", blend: g.additive ? "additive" : "premultiplied" },
+      { kind: "segs", name: "base", blend: g.additiveBase ? "additive" : "premultiplied", glow: (g.glow ?? 0) * 0.7 },
+      { kind: "segs", name: "flows", blend: g.additive ? "additive" : "premultiplied", glow: g.glow },
+      ...(g.block ? [{ kind: "quads", name: "shadows", blend: "darken" }, { kind: "boxes", name: "boxes" }] as const : []),
+      { kind: "marks", name: "marks" },
+    ], { solid: !!g.block });
+    if (this.deep?.fov) this.scene.cam.fov = this.deep.fov;
     this.scene.bg = rgba(theme.gpu.vizBg);
     this.scene.animated = true;
     let last = 0;
@@ -121,12 +125,10 @@ class NetController {
   private pose(deep: boolean): Pose {
     const m = this.model, s = this.scene;
     const keep = { cam: { ...s.cam }, lift: s.lift };
-    const ringR = m.rings.length ? m.rings[m.rings.length - 1] + 30 : 0;
-    const pad = m.sheets.length ? 46 : 0;
+    const ringR = m.domeR ? m.domeR + 26 : m.rings.length ? m.rings[m.rings.length - 1] + 30 : 0;
+    const pad = m.sheets.length ? 46 : this.deep?.form === "blocks" ? 46 : 0;
     const [x0, y0, x1, y1] = ringR ? [-ringR, -ringR, ringR, ringR] : [m.bounds[0] - pad, m.bounds[1] - pad, m.bounds[2] + pad, m.bounds[3] + pad];
-    let zLo = 0, zHi = 0;
-    if (deep) for (let i = 0; i < m.n; i++) { if (m.z[i] < zLo) zLo = m.z[i]; if (m.z[i] > zHi) zHi = m.z[i]; }
-    if (deep && ringR) { zLo = Math.min(...m.ringZ) - 20; zHi = Math.min(zHi, 90); }
+    const [zLo, zHi] = deep ? m.zRange : [0, 0];
     s.lift = deep ? 1 : 0;
     s.cam = {
       tx: (x0 + x1) / 2, ty: (y0 + y1) / 2, tz: (zLo + zHi) / 2,
@@ -230,10 +232,13 @@ class NetController {
 
   private rebuild() {
     const b = buildNetBuffers(this.model, this.theme, this.selected);
-    this.scene.setLayer(0, b.quads.data, b.quads.count);
-    this.scene.setLayer(1, b.base.data, b.base.count);
-    this.scene.setLayer(2, b.flows.data, b.flows.count);
-    this.scene.setLayer(3, b.marks, b.markCount);
+    this.scene.setLayer("quads", b.quads.data, b.quads.count);
+    this.scene.setLayer("surface", b.surface, b.surfaceCount);
+    this.scene.setLayer("base", b.base.data, b.base.count);
+    this.scene.setLayer("flows", b.flows.data, b.flows.count);
+    this.scene.setLayer("shadows", b.shadows.data, b.shadows.count);
+    this.scene.setLayer("boxes", b.boxes.data, b.boxes.count);
+    this.scene.setLayer("marks", b.marks, b.markCount);
     this.cb.stats({ n: this.model.n, m: this.model.m, segs: b.base.count + b.flows.count });
   }
 
@@ -407,7 +412,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
     getGpu().then((gpu) => {
       if (gone) return;
       ctl.current = new NetController(gpu, canvas.current!, labels.current!, hover.current!, theme, { select: setReadout, stats: setStats, frame: setFrame });
-      ctl.current.setModel(buildCoreModel(theme.gpu.layout, deep?.form), theme.motion.reveal);
+      ctl.current.setModel(buildCoreModel(theme.gpu), theme.motion.reveal);
       setStatus("ready");
       document.fonts.ready.then(() => { ctl.current?.measure(); ctl.current?.layout(); });
     }).catch((err) => {
@@ -440,7 +445,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
 
   const change = (d: Density) => {
     setDensity(d);
-    ctl.current?.setModel(d === "case" ? buildCoreModel(theme.gpu.layout, deep?.form) : buildStressModel(d === "5k" ? 5000 : 100000, deep?.form), 700);
+    ctl.current?.setModel(d === "case" ? buildCoreModel(theme.gpu) : buildStressModel(d === "5k" ? 5000 : 100000, theme.gpu), 700);
   };
   const changeSpace = (v: "flat" | "deep") => {
     setSpace(v);

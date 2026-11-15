@@ -3,24 +3,39 @@ import type { Draw, Gpu, StorageBuffer, Surface } from "vgpu";
 import marksShader from "./shaders/marks.wgsl";
 import segsShader from "./shaders/segments.wgsl";
 import quadsShader from "./shaders/quads.wgsl";
+import boxesShader from "./shaders/boxes.wgsl";
 import type { RGBA } from "../themes";
 import { motion, onMotionChange } from "../motion";
 
 export const MARK_FLOATS = 16;
 export const SEG_FLOATS = 20;
 export const QUAD_FLOATS = 28;
+export const BOX_FLOATS = 20;
 export const SHAPE = { circle: 0, square: 1, diamond: 2, hexagon: 3, triangle: 4, asterisk: 5, plus: 6 } as const;
 
-type Kind = "marks" | "segs" | "quads";
+type Kind = "marks" | "segs" | "quads" | "boxes";
 const KINDS = {
-  marks: { shader: marksShader, floats: MARK_FLOATS, binding: "marks" },
-  segs: { shader: segsShader, floats: SEG_FLOATS, binding: "segs" },
-  quads: { shader: quadsShader, floats: QUAD_FLOATS, binding: "quads" },
+  marks: { shader: marksShader, floats: MARK_FLOATS, binding: "marks", vertices: 6 },
+  segs: { shader: segsShader, floats: SEG_FLOATS, binding: "segs", vertices: 6 },
+  quads: { shader: quadsShader, floats: QUAD_FLOATS, binding: "quads", vertices: 6 },
+  boxes: { shader: boxesShader, floats: BOX_FLOATS, binding: "boxes", vertices: 30 },
+} as const;
+const BLENDS = {
+  premultiplied: "premultiplied",
+  additive: "additive",
+  darken: { color: { src: "one", dst: "one", op: "min" }, alpha: { src: "one", dst: "one", op: "max" } },
 } as const;
 
 export interface LayerSpec {
   kind: Kind;
-  blend?: "premultiplied" | "additive";
+  name: string;
+  blend?: keyof typeof BLENDS;
+  glow?: number;
+}
+// Boxes are solid and sort themselves through a depth buffer. An opaque scene clears to its ground colour, which the
+// darken blend of cast shadows relies on.
+export interface SceneOptions {
+  solid?: boolean;
 }
 interface Layer extends LayerSpec {
   draw: Draw;
@@ -109,12 +124,15 @@ export class Scene {
   private observer: IntersectionObserver;
   private offResize: () => void;
 
-  constructor(private gpu: Gpu, readonly canvas: HTMLCanvasElement, specs: LayerSpec[]) {
-    this.surface = surface(gpu, canvas, { dpr: [1, 2], alphaMode: "premultiplied" });
+  constructor(private gpu: Gpu, readonly canvas: HTMLCanvasElement, specs: LayerSpec[], private opts: SceneOptions = {}) {
+    this.surface = surface(gpu, canvas, { dpr: [1, 2], alphaMode: "premultiplied", depth: !!opts.solid, msaa: !!opts.solid });
     this.layers = specs.map((spec) => {
       const kind = KINDS[spec.kind];
       const buffer = storage(gpu, kind.floats * 4, "read");
-      const d = draw(gpu, { shader: kind.shader, vertices: 6, instances: 0, blend: spec.blend ?? "premultiplied" });
+      const d = draw(gpu, {
+        shader: kind.shader, vertices: kind.vertices, instances: 0, blend: BLENDS[spec.blend ?? "premultiplied"],
+        depth: spec.kind === "boxes" ? { write: true, compare: "less-equal" } : false,
+      });
       d.set({ [kind.binding]: buffer });
       return { ...spec, draw: d, buffer, capacity: 1, count: 0 };
     });
@@ -130,8 +148,10 @@ export class Scene {
     scenes.add(this);
   }
 
-  setLayer(index: number, data: Float32Array, count: number) {
-    const layer = this.layers[index];
+  // A scene without a layer of that name ignores the write, so builders can emit every kind of geometry.
+  setLayer(name: string, data: Float32Array, count: number) {
+    const layer = this.layers.find((l) => l.name === name);
+    if (!layer) return;
     const kind = KINDS[layer.kind];
     if (count > layer.capacity) {
       layer.capacity = Math.ceil(count * 1.25);
@@ -239,10 +259,12 @@ export class Scene {
       aperture: this.aperture,
       reveal: this.reveal,
       fogFloor: this.fogFloor,
+      glow: 0,
     };
-    frame.pass({ target: this.surface, clear: [0, 0, 0, 0] }, (pass) => {
+    frame.pass({ target: this.surface, clear: this.opts.solid ? [this.bg[0], this.bg[1], this.bg[2], 1] : [0, 0, 0, 0] }, (pass) => {
       for (const layer of this.layers) {
         if (layer.count === 0) continue;
+        view.glow = layer.glow ?? 0;
         layer.draw.set({ view });
         pass.draw(layer.draw, { instances: layer.count });
       }
@@ -348,5 +370,39 @@ export class QuadWriter {
     d.set(color, o + 16);
     d.set(ink, o + 20);
     d.set([grid, dotAlpha, borderAlpha, borderPx], o + 24);
+  }
+  private grow() {
+    if ((this.count + 1) * QUAD_FLOATS <= this.data.length) return;
+    const next = new Float32Array(this.data.length * 2);
+    next.set(this.data);
+    this.data = next;
+  }
+  // The shadow of the edge from a to b on a block of the given height, thrown along dir.
+  shadow(a: [number, number], b: [number, number], height: number, dir: [number, number], color: RGBA, delay = 0) {
+    this.grow();
+    const o = this.count++ * QUAD_FLOATS, d = this.data;
+    d.set([a[0], a[1], 0, 0, b[0], b[1], 0, 0, a[0], a[1], height, delay, b[0], b[1], height, 0], o);
+    d.set(color, o + 16);
+    d.set([dir[0], dir[1], 0, 0, -1, 0, 0, 0], o + 20);
+  }
+}
+
+export class BoxWriter {
+  data: Float32Array;
+  count = 0;
+  constructor(capacity = 256) {
+    this.data = new Float32Array(capacity * BOX_FLOATS);
+  }
+  box(x: number, y: number, z0: number, half: number, height: number, top: RGBA, side: RGBA, ink: RGBA, outline: number, shade = 0, delay = 0) {
+    if ((this.count + 1) * BOX_FLOATS > this.data.length) {
+      const next = new Float32Array(this.data.length * 2);
+      next.set(this.data);
+      this.data = next;
+    }
+    const o = this.count++ * BOX_FLOATS, d = this.data;
+    d.set([x, y, z0, half, height, delay, outline, shade], o);
+    d.set(top, o + 8);
+    d.set(side, o + 12);
+    d.set(ink, o + 16);
   }
 }

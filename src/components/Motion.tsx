@@ -3,15 +3,19 @@ import type { Theme } from "../themes";
 
 export function MotionSheet({ theme, onReplay, onRun }: { theme: Theme; onReplay: () => void; onRun: (command: string) => void }) {
   const m = theme.motion;
-  const [x1, y1, x2, y2] = m.ease.match(/-?[\d.]+/g)!.map(Number);
   const S = 120;
+  const stepped = m.ease.match(/^steps\((\d+)/);
+  const [x1, y1, x2, y2] = m.ease.match(/-?[\d.]+/g)!.map(Number);
+  const curve = stepped
+    ? `M0 ${S}` + Array.from({ length: +stepped[1] }, (_, i) => `H${((i + 1) / +stepped[1]) * S}V${S - ((i + 1) / +stepped[1]) * S}`).join("")
+    : `M0 ${S}C${x1 * S} ${S - y1 * S} ${x2 * S} ${S - y2 * S} ${S} 0`;
   return (
     <div className="motion">
       <div className="motion-curve">
         <svg viewBox={`-6 -6 ${S + 12} ${S + 12}`} role="img" aria-label={`Easing curve ${m.ease}`}>
           <path className="c-axis" d={`M0 0V${S}H${S}`} />
           <path className="c-rule" d={`M0 ${S}L${S} 0`} />
-          <path className="c-line" pathLength={1} d={`M0 ${S}C${x1 * S} ${S - y1 * S} ${x2 * S} ${S - y2 * S} ${S} 0`} />
+          <path className="c-line" pathLength={1} d={curve} />
         </svg>
         <p className="note">Entry {m.enter} ms, layout {m.layout} ms, response {m.hover} ms</p>
         <button type="button" className="btn" onClick={onReplay}>Replay entry</button>

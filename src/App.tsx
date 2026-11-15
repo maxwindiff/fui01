@@ -108,11 +108,13 @@ export function App() {
     const root = document.documentElement;
     root.dataset.theme = theme.id;
     root.dataset.family = theme.family;
+    root.dataset.mode = theme.mode;
     for (const [k, v] of Object.entries(theme.vars)) root.style.setProperty(k, v);
     const m = theme.motion;
     for (const [k, ms] of Object.entries({ enter: m.enter, stagger: m.stagger, hover: m.hover, reveal: m.reveal, layout: m.layout, expand: m.expand, sort: m.sort }))
       root.style.setProperty(k === "stagger" ? "--stagger" : `--dur-${k}`, `${ms}ms`);
     root.style.setProperty("--ease", m.ease);
+    root.style.setProperty("--ease-layout", m.layoutEase ?? m.ease);
     history.replaceState(null, "", `#${theme.id}`);
   }, [theme]);
 

@@ -1,17 +1,21 @@
-export type ThemeId = "vellum" | "orrery";
+export type ThemeId = "vellum" | "orrery" | "floe" | "console" | "massif" | "phosphor";
 export type RGBA = [number, number, number, number];
 
 export interface DeepSpace {
-  form: "strata" | "armillary";
+  form: "strata" | "armillary" | "blocks" | "relief" | "dome";
   pitch: number;
   yaw: number;
   sway: number;
   swayPeriod: number;
   aperture: number;
   fogFloor: number;
+  fov?: number;
   mapPitch: number;
   mapYaw: number;
   labels: [string, string];
+  mapLabel: string;
+  mapKey: string;
+  mapScale?: number;
 }
 
 export interface Motion {
@@ -24,17 +28,24 @@ export interface Motion {
   expand: number;
   sort: number;
   ease: string;
+  // Layout transitions take this curve where ease is stepped.
+  layoutEase?: string;
   notes: { name: string; what: string; timing: string }[];
 }
 
 export interface GpuStyle {
   vizBg: string;
   additive: boolean;
+  additiveBase?: boolean;
+  glow?: number;
+  // Sector colours inside the GPU views, for a theme whose views sit on a ground unlike the page.
+  sectors?: [string, string, string, string];
+  block?: BlockStyle;
   layout: "force" | "orbit";
   edge: { color: string; alpha: number; width: number; curve: number };
   money: { color: string; alpha: number; width: number; weak: number; weakAlpha: number; mode: "dash" | "pulse" };
   contact: { color: string; alpha: number; width: number; dash: number };
-  node: { stroke: number; hollowOfficials: boolean; halo: number; scale: number };
+  node: { stroke: number; hollowOfficials: boolean; hollowAll?: boolean; halo: number; scale: number };
   focus: { color: string; ring: number };
   guide: { color: string; alpha: number };
   map: {
@@ -47,9 +58,30 @@ export interface GpuStyle {
   deep: DeepSpace;
 }
 
+// paint decides whether a block takes the neutral top and side or its sector colour. ramp colours the map cells from
+// no giving to the most, and stepped rounds heights to whole storeys.
+export interface BlockStyle {
+  paint: "plain" | "sector";
+  top: string;
+  side: string;
+  ink: string;
+  inkAlpha: number;
+  outline: number;
+  shadow: number;
+  shadowColor: string;
+  focus: string | null;
+  glyph: string | null;
+  ramp: string[];
+  hover: string;
+  stepped: boolean;
+  coarse: boolean;
+  // Half width of a network block, in node radii.
+  width: number;
+}
+
 export interface Theme {
   id: ThemeId;
-  family: "vellum" | "orrery";
+  family: ThemeId;
   name: string;
   mode: "light" | "dark";
   concept: string;
@@ -183,6 +215,8 @@ const vellum: Theme = {
       mapPitch: 0.74,
       mapYaw: -0.3,
       labels: ["Flat", "Strata"],
+      mapLabel: "Spikes",
+      mapKey: "Spike height is giving",
     },
   },
   motion: {
@@ -322,6 +356,8 @@ const orrery: Theme = {
       mapPitch: 0.66,
       mapYaw: 0.28,
       labels: ["Plan", "Armillary"],
+      mapLabel: "Terrain",
+      mapKey: "Height is giving",
     },
   },
   motion: {
@@ -344,7 +380,545 @@ const orrery: Theme = {
   },
 };
 
-export const THEMES: Theme[] = [vellum, orrery];
+const floe: Theme = {
+  id: "floe",
+  family: "floe",
+  name: "Floe",
+  mode: "light",
+  concept:
+    "A white massing model on a survey sheet. Entities stand as blocks as tall as their weight in the case, the sun is low, and one orange mark carries the money.",
+  lineage: "White embossed instrument panels, architectural models, polar survey charts",
+  vars: {
+    "--bg": "#ECEEEF",
+    "--bg-image":
+      "radial-gradient(circle, rgba(31,37,43,0.15) 0.7px, transparent 1.2px) 12px 12px / 24px 24px, radial-gradient(120% 90% at 50% 10%, #F6F7F8 0%, #ECEEEF 50%, #DBDFE2 100%)",
+    "--surface": "transparent",
+    "--surface-2": "#DDE2E5",
+    "--viz-bg": "#E9ECEE",
+    "--viz-image": "none",
+    "--viz-image-size": "auto",
+    "--viz-ink": "#1F252B",
+    "--ink": "#1F252B",
+    "--ink-2": "#55606A",
+    "--ink-3": "#8A949C",
+    "--rule": "rgba(31,37,43,0.16)",
+    "--rule-strong": "rgba(31,37,43,0.85)",
+    "--accent": "#E8542A",
+    "--accent-text": "#C7401A",
+    "--accent-ink": "#FFFFFF",
+    "--gov": "#4F86B5",
+    "--corp": "#1F252B",
+    "--inter": "#E8542A",
+    "--event": "#68747E",
+    "--money": "#E8542A",
+    "--contact": "#4F86B5",
+    "--dem": "#4F86B5",
+    "--rep": "#D6453D",
+    "--ind": "#8A949C",
+    "--alert": "#D6453D",
+    "--ok": "#3F9C8C",
+    "--tint": "#A9CFC8",
+    "--font-display": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-ui": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-text": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-label": "'IBM Plex Mono', ui-monospace, monospace",
+    "--font-num": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--display-weight": "300",
+    "--display-track": "0.14em",
+    "--display-case": "uppercase",
+    "--title-size": "12.5px",
+    "--title-weight": "600",
+    "--label-case": "uppercase",
+    "--label-track": "0.07em",
+    "--label-size": "10px",
+    "--label-weight": "400",
+    "--ui-size": "14.5px",
+    "--text-size": "16.5px",
+    "--text-leading": "1.5",
+    "--num-weight": "600",
+    "--radius": "0px",
+    "--radius-ctl": "0px",
+    "--rule-w": "1px",
+    "--stroke": "1",
+    "--stroke-bold": "1.75",
+    "--mast-size": "96px",
+    "--font-name": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--name-weight": "500",
+    "--name-track": "0",
+    "--chart-font": "'IBM Plex Mono', ui-monospace, monospace",
+    "--chart-size": "10.5px",
+    "--chart-weight": "400",
+    "--chart-case": "uppercase",
+    "--chart-track": "0.04em",
+    "--net-font": "'Barlow Semi Condensed', 'Arial Narrow', sans-serif",
+    "--net-size": "12.5px",
+    "--net-weight": "500",
+    "--net-case": "none",
+    "--net-track": "0.01em",
+    "--redact": "#1F252B",
+  },
+  palette: [
+    { name: "Pack ice", role: "ground", var: "--bg" },
+    { name: "Polar night", role: "ink, corporate", var: "--ink" },
+    { name: "Signal orange", role: "money, intermediaries", var: "--accent" },
+    { name: "Steel blue", role: "government, contact", var: "--gov" },
+    { name: "Meltwater", role: "quiet fills", var: "--tint" },
+    { name: "Slate", role: "events, notes", var: "--ink-3" },
+  ],
+  type: [
+    { role: "Titles, reading, figures", family: "Barlow Semi Condensed", sample: "Twenty-six contacts in ninety days", var: "--font-text" },
+    { role: "Captions", family: "IBM Plex Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-label" },
+  ],
+  gpu: {
+    vizBg: "#E9ECEE",
+    additive: false,
+    layout: "force",
+    block: {
+      paint: "plain", top: "#FFFFFF", side: "#F0F3F5", ink: "#1F252B", inkAlpha: 0.1, outline: 0.6,
+      shadow: 0.55, shadowColor: "#55616C", focus: "#E8542A", glyph: null,
+      ramp: ["#F6F8F8", "#E3ECEB", "#C6DAD7", "#A3C4C0", "#7FAAA8"], hover: "#E8542A", stepped: false, coarse: false, width: 1.5,
+    },
+    edge: { color: "#1F252B", alpha: 0.3, width: 0.8, curve: 0 },
+    money: { color: "#E8542A", alpha: 1, width: 1.7, weak: 0.8, weakAlpha: 0.6, mode: "dash" },
+    contact: { color: "#4F86B5", alpha: 0.8, width: 0.9, dash: 3 },
+    node: { stroke: 1.1, hollowOfficials: true, halo: 0, scale: 0.7 },
+    focus: { color: "#E8542A", ring: 1.3 },
+    guide: { color: "#1F252B", alpha: 0.24 },
+    map: {
+      border: { color: "#1F252B", alpha: 0, width: 0.6 },
+      dot: { color: "#1F252B", alpha: 0.6, min: 0.45, max: 2.4, shape: 0, halo: 0, jitter: 0 },
+      arc: { color: "#E8542A", alpha: 1, width: 1.4, mode: "dash" },
+      city: { color: "#1F252B", shape: 0, fill: -1 },
+      event: { color: "#4F86B5" },
+    },
+    deep: {
+      form: "blocks", pitch: 0.74, yaw: -0.62, sway: 0.06, swayPeriod: 30, aperture: 0, fogFloor: 0.72,
+      mapPitch: 0.8, mapYaw: -0.34, labels: ["Plan", "Massing"], mapLabel: "Massing", mapKey: "Block height is giving",
+    },
+  },
+  motion: {
+    enter: 420,
+    stagger: 35,
+    reveal: 1500,
+    morph: 1000,
+    hover: 140,
+    layout: 340,
+    expand: 200,
+    sort: 300,
+    ease: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+    notes: [
+      { name: "Rule in", what: "The heavy rule under each title runs out from its tab when the panel comes into view, then the content fades up beneath it.", timing: "420 ms a panel, 35 ms apart" },
+      { name: "Extrude", what: "Blocks rise out of the sheet from the centre outward.", timing: "1.5 s, on the GPU" },
+      { name: "Raise", what: "Plan to Massing lifts every block to its height and lengthens the shadows with it.", timing: "1 s" },
+      { name: "Drift", what: "The model turns a few degrees each way and stops under the pointer.", timing: "30 s a cycle" },
+      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+    ],
+  },
+};
+
+const consoleTheme: Theme = {
+  id: "console",
+  family: "console",
+  name: "Console",
+  mode: "light",
+  concept:
+    "A printed operations manual with screens set into the page. Heavy grotesque figures sit on cream grid paper under thick rules, and the network and map run on dark tubes as stacks of coloured cells.",
+  lineage: "Ivory mission consoles, screenprinted pixel-grid posters, mint and charcoal instrument panels",
+  vars: {
+    "--bg": "#EDE3CB",
+    "--bg-image":
+      "linear-gradient(rgba(27,26,23,0.075) 1px, transparent 1px) 0 0 / 24px 24px, linear-gradient(90deg, rgba(27,26,23,0.075) 1px, transparent 1px) 0 0 / 24px 24px",
+    "--surface": "transparent",
+    "--surface-2": "#DFD3B4",
+    "--viz-bg": "#15140F",
+    "--viz-image": "none",
+    "--viz-image-size": "auto",
+    "--viz-ink": "#F2EBD9",
+    "--ink": "#1B1A17",
+    "--ink-2": "#5A574E",
+    "--ink-3": "#8C8777",
+    "--rule": "rgba(27,26,23,0.22)",
+    "--rule-strong": "#1B1A17",
+    "--accent": "#E8603C",
+    "--accent-text": "#BF4420",
+    "--accent-ink": "#1B1A17",
+    "--gov": "#5B2E9E",
+    "--corp": "#1B1A17",
+    "--inter": "#E8603C",
+    "--event": "#C98F0E",
+    "--money": "#E8603C",
+    "--contact": "#1C8E88",
+    "--dem": "#2A7FC0",
+    "--rep": "#C9402E",
+    "--ind": "#8C8777",
+    "--alert": "#C9402E",
+    "--ok": "#1E8A3E",
+    "--mustard": "#F2B52A",
+    "--font-display": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
+    "--font-ui": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
+    "--font-text": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
+    "--font-label": "'IBM Plex Mono', ui-monospace, monospace",
+    "--font-num": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
+    "--display-weight": "800",
+    "--display-track": "-0.035em",
+    "--display-case": "none",
+    "--title-size": "16px",
+    "--title-weight": "800",
+    "--label-case": "uppercase",
+    "--label-track": "0.07em",
+    "--label-size": "10.5px",
+    "--label-weight": "500",
+    "--ui-size": "14px",
+    "--text-size": "15.5px",
+    "--text-leading": "1.5",
+    "--num-weight": "600",
+    "--radius": "0px",
+    "--radius-ctl": "5px",
+    "--rule-w": "1px",
+    "--stroke": "1.3",
+    "--stroke-bold": "2.4",
+    "--mast-size": "118px",
+    "--font-name": "'Archivo Variable', 'Helvetica Neue', Arial, sans-serif",
+    "--name-weight": "800",
+    "--name-track": "-0.03em",
+    "--chart-font": "'IBM Plex Mono', ui-monospace, monospace",
+    "--chart-size": "10.5px",
+    "--chart-weight": "500",
+    "--chart-case": "uppercase",
+    "--chart-track": "0.04em",
+    "--net-font": "'IBM Plex Mono', ui-monospace, monospace",
+    "--net-size": "10.5px",
+    "--net-weight": "500",
+    "--net-case": "uppercase",
+    "--net-track": "0.05em",
+    "--redact": "#1B1A17",
+  },
+  palette: [
+    { name: "Manila", role: "ground", var: "--bg" },
+    { name: "Charcoal", role: "ink, rules, screens", var: "--ink" },
+    { name: "Burnt orange", role: "money, intermediaries", var: "--accent" },
+    { name: "Purple", role: "government", var: "--gov" },
+    { name: "Teal", role: "contact", var: "--contact" },
+    { name: "Mustard", role: "events, flags", var: "--mustard" },
+  ],
+  type: [
+    { role: "Titles, reading, figures", family: "Archivo", sample: "Twenty-six contacts in ninety days", var: "--font-text" },
+    { role: "Captions", family: "IBM Plex Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-label" },
+  ],
+  gpu: {
+    vizBg: "#15140F",
+    additive: false,
+    layout: "force",
+    sectors: ["#A688EE", "#F2EBD9", "#E8603C", "#F2B52A"],
+    block: {
+      paint: "sector", top: "#F2EBD9", side: "#F2EBD9", ink: "#15140F", inkAlpha: 1, outline: 1,
+      shadow: 0, shadowColor: "#000000", focus: null, glyph: "#15140F",
+      ramp: ["#34322B", "#1C8E88", "#F2B52A", "#E8603C", "#F2EBD9"], hover: "#FFFFFF", stepped: true, coarse: true, width: 2,
+    },
+    edge: { color: "#F2EBD9", alpha: 0.3, width: 0.8, curve: 0 },
+    money: { color: "#E8603C", alpha: 1, width: 1.9, weak: 0.9, weakAlpha: 0.65, mode: "dash" },
+    contact: { color: "#2BC0B6", alpha: 0.85, width: 1, dash: 2.5 },
+    node: { stroke: 1.2, hollowOfficials: false, halo: 0, scale: 0.6 },
+    focus: { color: "#F2EBD9", ring: 1.4 },
+    guide: { color: "#F2EBD9", alpha: 0.22 },
+    map: {
+      border: { color: "#F2EBD9", alpha: 0, width: 0.6 },
+      dot: { color: "#F2EBD9", alpha: 0.6, min: 0.45, max: 2.4, shape: 1, halo: 0, jitter: 0 },
+      arc: { color: "#F2EBD9", alpha: 1, width: 1.5, mode: "dash" },
+      city: { color: "#F2EBD9", shape: 1, fill: 1 },
+      event: { color: "#A688EE" },
+    },
+    deep: {
+      form: "blocks", pitch: 0.62, yaw: 0.785, sway: 0, swayPeriod: 30, aperture: 0, fogFloor: 1, fov: 0.14,
+      mapPitch: 0.66, mapYaw: 0.5, labels: ["Plan", "Stacks"], mapLabel: "Stacks", mapKey: "Storeys are giving, in four bands",
+    },
+  },
+  motion: {
+    enter: 360,
+    stagger: 50,
+    reveal: 1400,
+    morph: 900,
+    hover: 60,
+    layout: 400,
+    expand: 240,
+    sort: 400,
+    ease: "steps(6, end)",
+    layoutEase: "cubic-bezier(0.2, 0.7, 0.1, 1)",
+    notes: [
+      { name: "Feed", what: "Panels print downward in steps when they come into view. Charts wipe left to right and the money flow runs from sources to recipients.", timing: "360 ms a panel, 50 ms apart" },
+      { name: "Stack", what: "Cells light from the centre outward and grow to their storey.", timing: "1.4 s, on the GPU" },
+      { name: "Jack up", what: "Plan to Stacks raises every stack and swings the view to a fixed isometric angle.", timing: "0.9 s" },
+      { name: "Steps", what: "Rows, folds and toggles move in six steps with no easing. Layout changes stay smooth.", timing: "six steps" },
+      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+    ],
+  },
+};
+
+const massif: Theme = {
+  id: "massif",
+  family: "massif",
+  name: "Massif",
+  mode: "dark",
+  concept:
+    "A landscape of influence under a night sky. The ground rises wherever entities and money crowd together, drawn as a field of lit points, and one red route colour carries the money across it.",
+  lineage: "Dot-matrix terrain, greyscale relief with a glowing route, glass panels with small mono labels",
+  vars: {
+    "--bg": "#0A0D10",
+    "--bg-image": "radial-gradient(90% 60% at 50% 0%, #151B21 0%, #0A0D10 62%)",
+    "--surface": "rgba(19,24,30,0.74)",
+    "--surface-2": "#1C232B",
+    "--viz-bg": "#07090B",
+    "--viz-image": "radial-gradient(70% 70% at 50% 62%, #10151A 0%, #07090B 80%)",
+    "--viz-image-size": "auto",
+    "--viz-ink": "#E8ECEF",
+    "--ink": "#E8ECEF",
+    "--ink-2": "#A2ABB3",
+    "--ink-3": "#69727B",
+    "--rule": "rgba(154,163,171,0.2)",
+    "--rule-strong": "rgba(232,236,239,0.6)",
+    "--accent": "#FF4A1C",
+    "--accent-text": "#FF6E48",
+    "--accent-ink": "#0A0D10",
+    "--gov": "#4FAEF0",
+    "--corp": "#E8ECEF",
+    "--inter": "#FF4A1C",
+    "--event": "#E8C35A",
+    "--money": "#FF4A1C",
+    "--contact": "#4FAEF0",
+    "--dem": "#4FAEF0",
+    "--rep": "#F2617A",
+    "--ind": "#A2ABB3",
+    "--alert": "#FF4A1C",
+    "--ok": "#5FD0A0",
+    "--gold": "#E8C35A",
+    "--font-display": "'Saira Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-ui": "'Saira Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-text": "'Saira Semi Condensed', 'Arial Narrow', sans-serif",
+    "--font-label": "'JetBrains Mono Variable', ui-monospace, monospace",
+    "--font-num": "'JetBrains Mono Variable', ui-monospace, monospace",
+    "--display-weight": "600",
+    "--display-track": "0.05em",
+    "--display-case": "uppercase",
+    "--title-size": "12.5px",
+    "--title-weight": "600",
+    "--label-case": "uppercase",
+    "--label-track": "0.1em",
+    "--label-size": "9.5px",
+    "--label-weight": "500",
+    "--ui-size": "14px",
+    "--text-size": "15.5px",
+    "--text-leading": "1.55",
+    "--num-weight": "500",
+    "--radius": "3px",
+    "--radius-ctl": "2px",
+    "--rule-w": "1px",
+    "--stroke": "1.1",
+    "--stroke-bold": "1.9",
+    "--mast-size": "100px",
+    "--font-name": "'Saira Semi Condensed', 'Arial Narrow', sans-serif",
+    "--name-weight": "500",
+    "--name-track": "0.01em",
+    "--chart-font": "'JetBrains Mono Variable', ui-monospace, monospace",
+    "--chart-size": "10px",
+    "--chart-weight": "500",
+    "--chart-case": "uppercase",
+    "--chart-track": "0.06em",
+    "--net-font": "'JetBrains Mono Variable', ui-monospace, monospace",
+    "--net-size": "10px",
+    "--net-weight": "500",
+    "--net-case": "uppercase",
+    "--net-track": "0.08em",
+    "--redact": "#39424B",
+  },
+  palette: [
+    { name: "Basalt", role: "ground", var: "--bg" },
+    { name: "Snow", role: "ink, terrain, corporate", var: "--ink" },
+    { name: "Route red", role: "money, intermediaries, focus", var: "--accent" },
+    { name: "Azure", role: "government, contact", var: "--gov" },
+    { name: "Survey gold", role: "events, coordinates", var: "--gold" },
+    { name: "Scree", role: "labels, notes", var: "--ink-2" },
+  ],
+  type: [
+    { role: "Titles and reading", family: "Saira Semi Condensed", sample: "TWENTY-SIX CONTACTS IN NINETY DAYS", var: "--font-display" },
+    { role: "Labels and figures", family: "JetBrains Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-label" },
+  ],
+  gpu: {
+    vizBg: "#07090B",
+    additive: true,
+    glow: 2.6,
+    layout: "force",
+    edge: { color: "#A2ABB3", alpha: 0.26, width: 0.7, curve: 0.1 },
+    money: { color: "#FF4A1C", alpha: 1, width: 1.7, weak: 0.8, weakAlpha: 0.55, mode: "pulse" },
+    contact: { color: "#4FAEF0", alpha: 0.65, width: 0.8, dash: 0 },
+    node: { stroke: 1.2, hollowOfficials: true, halo: 0, scale: 1 },
+    focus: { color: "#FF4A1C", ring: 1.4 },
+    guide: { color: "#A2ABB3", alpha: 0.4 },
+    map: {
+      border: { color: "#A2ABB3", alpha: 0.34, width: 0.6 },
+      dot: { color: "#E8ECEF", alpha: 1, min: 0.5, max: 2.1, shape: 0, halo: 0, jitter: 0 },
+      arc: { color: "#FF4A1C", alpha: 1, width: 1.5, mode: "pulse" },
+      city: { color: "#E8ECEF", shape: 1, fill: -1 },
+      event: { color: "#E8C35A" },
+    },
+    deep: {
+      form: "relief", pitch: 0.46, yaw: -0.5, sway: 0.12, swayPeriod: 40, aperture: 3, fogFloor: 0.14,
+      mapPitch: 0.6, mapYaw: -0.14, labels: ["Flat", "Relief"], mapLabel: "Relief", mapKey: "Height is giving, smoothed across state lines", mapScale: 0.97,
+    },
+  },
+  motion: {
+    enter: 600,
+    stagger: 55,
+    reveal: 2000,
+    morph: 1500,
+    hover: 200,
+    layout: 480,
+    expand: 280,
+    sort: 420,
+    ease: "cubic-bezier(0.25, 0.6, 0.15, 1)",
+    notes: [
+      { name: "Lock on", what: "Corner brackets close in on each panel as it comes into view while the glass fades up.", timing: "600 ms a panel, 55 ms apart" },
+      { name: "Survey", what: "The point field lights from the centre outward, then stems and routes follow.", timing: "2 s, on the GPU" },
+      { name: "Uplift", what: "Flat to Relief raises the ground under the points and drops the camera to a low angle.", timing: "1.5 s" },
+      { name: "Orbit", what: "The camera drifts around the landform. Near and far points go soft with distance.", timing: "40 s a cycle" },
+      { name: "Money", what: "Pulses travel along routes and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
+    ],
+  },
+};
+
+const phosphor: Theme = {
+  id: "phosphor",
+  family: "phosphor",
+  name: "Phosphor",
+  mode: "dark",
+  concept:
+    "A vector display with nothing filled in. Red draws the frames, amber the labels and the money, green the data, and the network sits on a wire dome with the subject at its pole.",
+  lineage: "Vector arcade tubes, neon isometric wireframes, radar scopes",
+  vars: {
+    "--bg": "#170D1B",
+    "--bg-image": "radial-gradient(90% 70% at 50% 18%, #25132B 0%, #170D1B 55%, #0E0711 100%)",
+    "--surface": "transparent",
+    "--surface-2": "rgba(255,74,43,0.13)",
+    "--viz-bg": "#110915",
+    "--viz-image": "radial-gradient(65% 65% at 50% 52%, #1F1025 0%, #0D0610 82%)",
+    "--viz-image-size": "auto",
+    "--viz-ink": "#F4E8CF",
+    "--ink": "#F4E8CF",
+    "--ink-2": "#F0B03A",
+    "--ink-3": "#A07E48",
+    "--rule": "rgba(255,74,43,0.4)",
+    "--rule-strong": "#FF4A2B",
+    "--accent": "#FFC53D",
+    "--accent-text": "#FFC53D",
+    "--accent-ink": "#170D1B",
+    "--gov": "#9A8CFF",
+    "--corp": "#2FD9A0",
+    "--inter": "#FFC53D",
+    "--event": "#E85AD0",
+    "--money": "#FFC53D",
+    "--contact": "#3DE6E0",
+    "--dem": "#8F9BFF",
+    "--rep": "#FF4A2B",
+    "--ind": "#9AE34A",
+    "--alert": "#FF4A2B",
+    "--ok": "#2FD9A0",
+    "--frame": "#FF4A2B",
+    "--font-display": "'Michroma', 'Eurostile', sans-serif",
+    "--font-ui": "'Chakra Petch', 'Arial Narrow', sans-serif",
+    "--font-text": "'Chakra Petch', 'Arial Narrow', sans-serif",
+    "--font-label": "'Share Tech Mono', ui-monospace, monospace",
+    "--font-num": "'Share Tech Mono', ui-monospace, monospace",
+    "--display-weight": "400",
+    "--display-track": "0.08em",
+    "--display-case": "uppercase",
+    "--title-size": "10.5px",
+    "--title-weight": "400",
+    "--label-case": "uppercase",
+    "--label-track": "0.08em",
+    "--label-size": "11.5px",
+    "--label-weight": "400",
+    "--ui-size": "14.5px",
+    "--text-size": "15.5px",
+    "--text-leading": "1.55",
+    "--num-weight": "400",
+    "--radius": "0px",
+    "--radius-ctl": "0px",
+    "--rule-w": "1px",
+    "--stroke": "1.4",
+    "--stroke-bold": "2",
+    "--mast-size": "58px",
+    "--font-name": "'Chakra Petch', 'Arial Narrow', sans-serif",
+    "--name-weight": "500",
+    "--name-track": "0.01em",
+    "--chart-font": "'Share Tech Mono', ui-monospace, monospace",
+    "--chart-size": "11.5px",
+    "--chart-weight": "400",
+    "--chart-case": "uppercase",
+    "--chart-track": "0.05em",
+    "--net-font": "'Share Tech Mono', ui-monospace, monospace",
+    "--net-size": "11.5px",
+    "--net-weight": "400",
+    "--net-case": "uppercase",
+    "--net-track": "0.06em",
+    "--redact": "#5A2A32",
+  },
+  palette: [
+    { name: "Tube black", role: "ground", var: "--bg" },
+    { name: "Frame red", role: "rules, frames, alerts", var: "--frame" },
+    { name: "Amber", role: "labels, money, focus", var: "--accent" },
+    { name: "Trace green", role: "data, corporate", var: "--corp" },
+    { name: "Violet", role: "government", var: "--gov" },
+    { name: "Cyan", role: "contact", var: "--contact" },
+  ],
+  type: [
+    { role: "Titles", family: "Michroma", sample: "CONTACTS :: 26", var: "--font-display" },
+    { role: "Reading", family: "Chakra Petch", sample: "Voss left this office nineteen months earlier.", var: "--font-text" },
+    { role: "Labels and figures", family: "Share Tech Mono", sample: "LD-2 2025 Q3  $2,940,000", var: "--font-label" },
+  ],
+  gpu: {
+    vizBg: "#110915",
+    additive: true,
+    additiveBase: true,
+    glow: 3.4,
+    layout: "orbit",
+    edge: { color: "#FF4A2B", alpha: 0.34, width: 0.9, curve: 0 },
+    money: { color: "#FFC53D", alpha: 1, width: 1.6, weak: 0.9, weakAlpha: 0.5, mode: "dash" },
+    contact: { color: "#3DE6E0", alpha: 0.75, width: 0.9, dash: 0 },
+    node: { stroke: 1.5, hollowOfficials: true, hollowAll: true, halo: 5, scale: 1.05 },
+    focus: { color: "#FFC53D", ring: 1.4 },
+    guide: { color: "#2FD9A0", alpha: 0.42 },
+    map: {
+      border: { color: "#2FD9A0", alpha: 0.36, width: 0.8 },
+      dot: { color: "#2FD9A0", alpha: 0, min: 0.4, max: 1.4, shape: 6, halo: 0, jitter: 0 },
+      arc: { color: "#FFC53D", alpha: 1, width: 1.5, mode: "dash" },
+      city: { color: "#FFC53D", shape: 2, fill: -1 },
+      event: { color: "#E85AD0" },
+    },
+    deep: {
+      form: "dome", pitch: 0.5, yaw: 0.5, sway: 0.34, swayPeriod: 60, aperture: 0, fogFloor: 0.3,
+      mapPitch: 0.6, mapYaw: 0.34, labels: ["Scope", "Dome"], mapLabel: "Extrude", mapKey: "Outline height is giving", mapScale: 0.9,
+    },
+  },
+  motion: {
+    enter: 500,
+    stagger: 50,
+    reveal: 1900,
+    morph: 1300,
+    hover: 120,
+    layout: 440,
+    expand: 240,
+    sort: 380,
+    ease: "cubic-bezier(0.3, 0, 0.2, 1)",
+    notes: [
+      { name: "Strike", what: "Each frame flickers on like a tube warming up when it comes into view. Lines draw and the money flow wipes from sources to recipients.", timing: "500 ms a panel, 50 ms apart" },
+      { name: "Trace", what: "The beam draws the rings from the pole outward, then each tie from source to target.", timing: "1.9 s, on the GPU" },
+      { name: "Inflate", what: "Scope to Dome lifts the rings into latitudes and tips the camera in one move.", timing: "1.3 s" },
+      { name: "Sweep", what: "The meridians turn around the pole while the camera swings slowly. Both stop under the pointer.", timing: "60 s a cycle" },
+      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+    ],
+  },
+};
+
+export const THEMES: Theme[] = [vellum, floe, consoleTheme, orrery, massif, phosphor];
 export const themeById = (id: string) => THEMES.find((t) => t.id === id) ?? vellum;
 
 export interface Interaction {
