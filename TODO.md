@@ -14,7 +14,6 @@ To look at a variant, run `git switch theme-experiments` and `npm install`, then
 
 The Ask page (`#vellum/ask`, code in `src/ask/`) has a scripted agent in `agent.ts`. Answers follow the format in `spec.ts`, the queries run in DuckDB-Wasm (`db.ts`, `run.ts`), `filters.ts` turns comparisons in the SQL into controls, `render.tsx` lays out the marks and `history.ts` keeps the tree of answers.
 
-- Deploy to Vercel. Set `OPENROUTER_API_KEY` and `ASK_PASSWORD`, and a credit limit on the OpenRouter key. Check that the function in `api/ask.ts` loads: the project uses ES modules with extensionless imports, which Vercel's Node runtime may reject. If it does, bundle `server/ask.ts` in a build step.
 - The rate limits in `server/ask.ts` count in memory per function instance. Move them to a shared store if the page gets more than a few users.
 - Add a text block for diffs and quotes, and time as a channel.
 - The dossier's "Show in network" button reveals the case board's network panel, which is not on the Ask page. On the Ask page it could ask for a network centered on the entity instead.

@@ -139,9 +139,9 @@ function watch(el: Element, fn: Seen) {
 // A panel renders at its place on the board, on the stage, or as a tile in the rail beside the stage.
 // Its entry plays when it first comes into view ("frame") and again when it goes onto the stage ("content").
 export function Panel({
-  fig, title, meta, glance, span = 12, children, flush,
+  fig, title, meta, glance, ask, span = 12, children, flush,
 }: {
-  fig: string; title: string; meta?: ReactNode; glance?: ReactNode; span?: number; children: ReactNode; flush?: boolean;
+  fig: string; title: string; meta?: ReactNode; glance?: ReactNode; ask?: string; span?: number; children: ReactNode; flush?: boolean;
 }) {
   const staged = useWs((s) => s.stage === fig);
   const tile = useWs((s) => s.stage !== null && s.stage !== fig);
@@ -218,6 +218,11 @@ export function Panel({
         <PanelIcon fig={fig} />
         <h2 className="panel-title" data-note={tile ? undefined : "entry"}>{title}</h2>
         {meta && !tile ? <span className="panel-meta">{meta}</span> : null}
+        {ask && !tile ? (
+          <button type="button" className="panel-ask" aria-label={`Ask: ${ask}`} data-tip="Ask about this on the Ask page" onClick={(e) => { e.stopPropagation(); ws.askAbout(ask); }}>
+            <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M3 4.5 6.5 7.5 3 10.5M7.5 11h4" /></svg>
+          </button>
+        ) : null}
         <button
           type="button" className="panel-x" aria-label={staged ? `Return ${title} to the board` : `Open ${title} at full size`}
           data-tip={staged ? "Return to the board (Esc)" : "Open at full size"} data-note="full"

@@ -36,6 +36,8 @@ export interface LayerSpec {
 // darken blend of cast shadows relies on.
 export interface SceneOptions {
   solid?: boolean;
+  // A depth buffer on a transparent ground, for boxes drawn over a page background.
+  depth?: boolean;
 }
 interface Layer extends LayerSpec {
   draw: Draw;
@@ -125,7 +127,7 @@ export class Scene {
   private offResize: () => void;
 
   constructor(private gpu: Gpu, readonly canvas: HTMLCanvasElement, specs: LayerSpec[], private opts: SceneOptions = {}) {
-    this.surface = surface(gpu, canvas, { dpr: [1, 2], alphaMode: "premultiplied", depth: !!opts.solid, msaa: !!opts.solid });
+    this.surface = surface(gpu, canvas, { dpr: [1, 2], alphaMode: "premultiplied", depth: !!(opts.solid || opts.depth), msaa: !!(opts.solid || opts.depth) });
     this.layers = specs.map((spec) => {
       const kind = KINDS[spec.kind];
       const buffer = storage(gpu, kind.floats * 4, "read");

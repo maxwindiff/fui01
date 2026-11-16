@@ -220,7 +220,7 @@ const STEPS: Step[] = [
 
 const ORDER = ["aero", "date", "votes", "brandt", "map", "money", "split", "fund", "net", "timeline", "age", "spend", "summit", "sim"];
 export function suggest(c: Context): string[] {
-  return ORDER.map((id) => STEPS.find((s) => s.id === id)!).filter((s) => s.ok(c)).slice(0, 7).map((s) => s.label);
+  return ORDER.map((id) => STEPS.find((s) => s.id === id)!).filter((s) => s.ok(c)).slice(0, 5).map((s) => s.label);
 }
 
 export async function ask(q: string, c: Context): Promise<Reply | { error: string }> {

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { Segmented, useSize } from "../components/primitives";
 import { tip, TipRow } from "../tip";
+import { useWs, ws } from "../workspace";
 import { ask, suggest } from "./agent";
 import { askModel, current, savePassword } from "./model";
 import type { ModelContext } from "./model";
@@ -16,15 +17,21 @@ import type { History, VNode } from "./history";
 import { loadMapData } from "./map";
 import type { MapData } from "./map";
 import { scene, setMeasure } from "./render";
-import type { KeyEntry, MarkT, Scene } from "./render";
+import type { MarkT, Scene } from "./render";
 import { load } from "./run";
+import { breakdown, listRows, split, unsplit } from "./breakdown";
+import type { Breakdown } from "./breakdown";
 import { EntityPop } from "./EntityPop";
+import { Deep } from "./Deep";
 import { entityIn } from "./entities";
 import type { Loaded } from "./run";
 import { labelOf } from "./spec";
 import type { Answer, Channel, Param } from "./spec";
+import type { Theme } from "../themes";
 
 const H = 560;
+// Per-tone patterns, which some themes use to paint bars: pen hatching, a dot matrix, or lamp segments.
+const PAINT_TONES = [["ink", "--ink-2"], ["accent", "--accent"], ["t1", "--t1"], ["t2", "--t2"], ["t3", "--t3"], ["t4", "--t4"], ["t5", "--t5"], ["t6", "--t6"]] as const;
 
 const fitCache = new Map<string, string>();
 // Shortens text to fit a width, measured in the theme's font with the probe the layout uses.
@@ -47,29 +54,6 @@ function fit(text: string, w: number) {
   }
   fitCache.set(k, t);
   return t;
-}
-
-function Swatch({ cls, shape }: { cls: string; shape: string }) {
-  if (shape === "line") return <svg className="ask-sw" width="16" height="12" viewBox="0 -6 16 12" aria-hidden="true"><path className={`ask-link ${cls}`} d="M1 0H15" /></svg>;
-  const d = shape === "diamond" ? 7.5 : 9;
-  return (
-    <svg className="ask-sw" width="12" height="12" viewBox="-6 -6 12 12" aria-hidden="true">
-      <g className={`ask-m ${cls}`} transform={shape === "diamond" ? "rotate(45)" : undefined}><rect x={-d / 2} y={-d / 2} width={d} height={d} rx={shape === "dot" || shape === "ring" ? d / 2 : 0} /></g>
-    </svg>
-  );
-}
-
-function Key({ entries }: { entries: KeyEntry[] }) {
-  return (
-    <ul className="ask-key">
-      {entries.map((e, i) => (
-        <li key={i}>
-          {e.title ? <span className="ask-key-t">{e.title}</span> : null}
-          {e.items.map((it) => <span key={it.label} className="ask-key-i"><Swatch cls={it.cls} shape={it.shape} />{it.label}</span>)}
-        </li>
-      ))}
-    </ul>
-  );
 }
 
 function RowTip({ a, data, m }: { a: Answer; data: Loaded; m: MarkT }) {
@@ -148,6 +132,36 @@ function OpMenu({ op, ops, text, onPick }: { op: Op; ops: Op[]; text: string; on
     </span>
   );
 }
+// Splits bars by a second column, or lists the rows behind them.
+function BreakMenu({ b, units, picked, onSplit, onList }: { b: Breakdown; units: string; picked: number; onSplit: (field: string | null) => void; onList: () => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: PointerEvent) => { if (!wrap.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    addEventListener("pointerdown", off);
+    addEventListener("keydown", esc);
+    return () => { removeEventListener("pointerdown", off); removeEventListener("keydown", esc); };
+  }, [open]);
+  const cur = b.options.find((o) => o.field === b.current);
+  const pick = (f: () => void) => { setOpen(false); f(); };
+  return (
+    <span className="ask-opw ask-break" ref={wrap}>
+      <button type="button" className={`btn quiet${cur ? " on" : ""}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{cur ? `By ${cur.label.toLowerCase()}` : "Break down"}</button>
+      {open ? (
+        <span className="ask-pop ask-list" role="menu">
+          <span className="ask-list-h">Split each bar by</span>
+          {b.options.map((o) => <button key={o.field} type="button" role="menuitemradio" aria-checked={o.field === b.current} className={o.field === b.current ? "on" : ""} onClick={() => pick(() => onSplit(o.field === b.current ? null : o.field))}>{o.label}</button>)}
+          {cur ? <button type="button" role="menuitem" onClick={() => pick(() => onSplit(null))}>No split</button> : null}
+          <span className="ask-list-h">Open up</span>
+          <button type="button" role="menuitem" onClick={() => pick(onList)}>{picked ? `List the ${units} in ${picked} selected ${picked === 1 ? "bar" : "bars"}` : `List all ${b.rows} ${units}`}</button>
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
 function FilterChip({ f: raw, labels, onEdit }: { f: Filter; labels?: Record<string, string>; onEdit: (f: Filter, ed: FilterEdit, label: string) => void }) {
   const f = labels?.[raw.expr.replace(/^"|"$/g, "")] ? { ...raw, label: labels[raw.expr.replace(/^"|"$/g, "")] } : raw;
   const d = f.domain;
@@ -249,6 +263,16 @@ function ParamChip({ k, p, onSet }: { k: string; p: Param; onSet: (k: string, v:
   );
 }
 
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const copy = () => navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1200); }, () => {});
+  return (
+    <button type="button" className="ask-copy" data-done={done ? "" : undefined} aria-label="Copy question" data-tip={done ? "Copied" : "Copy question"} onClick={copy}>
+      <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">{done ? <path d="M2 6.5 5 9.5 10 3" /> : <><rect x="4" y="4" width="6.5" height="6.5" rx="1" /><path d="M8 2.5V2a.5.5 0 0 0-.5-.5h-5A.5.5 0 0 0 2 2v5.5a.5.5 0 0 0 .5.5H3" /></>}</svg>
+    </button>
+  );
+}
+
 function Tree({ h, onPick }: { h: History; onPick: (id: number) => void }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
   const cur = askOf(h)?.id;
@@ -282,6 +306,7 @@ function Tree({ h, onPick }: { h: History; onPick: (id: number) => void }) {
             ) : (
               <button type="button" className={`k-${r.n.kind}${r.n.id === h.head ? " head" : ""}`} aria-current={r.n.id === h.head ? "step" : undefined} onClick={() => onPick(r.n.id)}>{r.n.label}</button>
             )}
+            {r.n.kind === "ask" ? <CopyButton text={r.n.label} /> : null}
           </li>
         ))}
       </ol>
@@ -289,8 +314,11 @@ function Tree({ h, onPick }: { h: History; onPick: (id: number) => void }) {
   );
 }
 
-export function Ask() {
-  const [h, setH] = useState<History>(EMPTY_HISTORY);
+// The page is mounted again when the theme changes, so the history and the way of looking at it carry over here.
+const kept: { h: History; form: "chart" | "table" | null; space: "flat" | "deep" } = { h: EMPTY_HISTORY, form: null, space: "flat" };
+
+export function Ask({ theme }: { theme: Theme }) {
+  const [h, setH] = useState<History>(() => kept.h);
   const [data, setData] = useState<{ answer: Answer; loaded: Loaded } | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState<{ status: string; ms: number } | null>(null);
@@ -299,9 +327,13 @@ export function Ask() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [map, setMap] = useState<MapData | null>(null);
   const [axisMenu, setAxisMenu] = useState<"x" | "y" | null>(null);
-  const [pop, setPop] = useState<{ ent: string; mark: string } | null>(null);
+  const [pop, setPop] = useState<{ ent: string; mark: string; at?: { x: number; y: number } } | null>(null);
   // Chart or table is a way of looking at the answer rather than a change to it, so it stays out of the history.
-  const [form, setForm] = useState<"chart" | "table" | null>(null);
+  const [form, setForm] = useState<"chart" | "table" | null>(() => kept.form);
+  // The 3D view is another way of looking, like the form. Leaving it plays the camera back down before the flat chart
+  // returns.
+  const [space, setSpace] = useState<"flat" | "deep">(() => kept.space);
+  const [leaving, setLeaving] = useState(false);
   const [box, { w: W }] = useSize<HTMLDivElement>();
   const marks = useRef<SVGGElement>(null);
   const linkLayer = useRef<SVGGElement>(null);
@@ -314,11 +346,21 @@ export function Ask() {
   const seq = useRef(0);
   const hRef = useRef(h);
   hRef.current = h;
+  Object.assign(kept, { h, form, space: leaving ? "flat" : space });
   const head = node(h, h.head);
   const answer = head?.answer ?? null;
 
+  // A question sent from the case board fills the input and waits for the reader to submit it.
+  const draft = useWs((s) => s.draft);
   useEffect(() => {
-    connect().then(() => setReady(true), (e) => setNote(`The case records could not be loaded: ${e.message}`));
+    const d = draft === null ? null : ws.takeDraft();
+    if (d === null) return;
+    setQ(d);
+    requestAnimationFrame(() => { input.current?.focus(); input.current?.setSelectionRange(d.length, d.length); });
+  }, [draft]);
+
+  useEffect(() => {
+    connect().then(() => setReady(true), (e) => { console.error(e); setNote("Error loading data"); });
     loadMapData().then(setMap);
     const key = (e: KeyboardEvent) => {
       if (e.key !== "/" || (e.target as HTMLElement).closest("input, textarea")) return;
@@ -352,7 +394,7 @@ export function Ask() {
   }, []);
 
   useLayoutEffect(() => {
-    engine.current = new Engine(marks.current!, linkLayer.current!);
+    engine.current = new Engine(marks.current!, linkLayer.current!, theme.gpu.edge.curve);
     return () => { engine.current?.dispose(); engine.current = null; };
   }, []);
 
@@ -363,7 +405,8 @@ export function Ask() {
     load(answer).then((loaded) => {
       if (n !== seq.current) return;
       setData({ answer, loaded });
-      setNote(loaded.errors.length ? `The description has problems the agent would repair: ${loaded.errors.join("; ")}` : "");
+      if (loaded.errors.length) console.warn(loaded.errors);
+      setNote(loaded.errors.length ? "Error querying data" : "");
     });
   }, [answer, ready]);
 
@@ -402,7 +445,7 @@ export function Ask() {
           const h2 = commit(hRef.current, "edit", p.label, next, p.key);
           hRef.current = h2;
           setH(h2);
-        } catch (e) { setNote(`The edit could not be applied: ${(e as Error).message}`); }
+        } catch (e) { console.error(e); setNote("Error querying data"); }
       }
       running.current = false;
     })();
@@ -410,6 +453,20 @@ export function Ask() {
   const onFilter = (f: Filter, ed: FilterEdit, label: string) => edit(label, `f:${f.id}:${ed.remove ? "rm" : ed.op ? "op" : "v"}`, (a) => editFilter(a, f, ed), { dur: 360, stagger: 40 });
   const onParam = (k: string, v: number) => edit(`${answer?.params?.[k].label ?? k} ${v}${answer?.params?.[k].unit ?? ""}`, `p:${k}`, (a) => ({ ...a, params: { ...a.params, [k]: { ...a.params![k], value: v } } }), { dur: 220 });
   const onForm = (f: "chart" | "table") => { nextMove.current = { dur: 800, stagger: 280 }; setForm(f); };
+  const brk = data && (form ?? data.answer.form) !== "table" ? breakdown(data.answer, data.loaded) : null;
+  const pickedBands = brk ? [...new Set((sc?.marks ?? []).filter((m) => sel.has(m.id) && m.row[brk.band] != null).map((m) => String(m.row[brk.band])))] : [];
+  const onSplit = (field: string | null) => {
+    if (!brk) return;
+    const label = field ? brk.options.find((o) => o.field === field)!.label : "";
+    edit(field ? `Split by ${label.toLowerCase()}` : "Removed the split", "split", (a) => (field ? split(a, brk, field) : unsplit(a)), { dur: 700, stagger: 160 });
+  };
+  const onList = () => {
+    if (!brk) return;
+    const bands = pickedBands;
+    setSel(new Set());
+    setForm(null);
+    edit(bands.length ? `Listed the ${answer?.unit?.[1] ?? "rows"} in ${bands.join(", ")}` : `Listed the ${answer?.unit?.[1] ?? "rows"}`, "list", (a) => listRows(a, brk, bands, brk.bands), { dur: 800, stagger: 280 });
+  };
   const onSort = (field: string) => edit(`Sorted by ${labelOf(answer!, field).toLowerCase()}`, "sort", (a) => ({ ...a, sort: { field, desc: a.sort?.field === field ? !a.sort.desc : false } }), { dur: 520, stagger: 120 });
   const onSwap = (axis: "x" | "y", from: string, to: string, type: string) => {
     setAxisMenu(null);
@@ -452,8 +509,8 @@ export function Ask() {
   const run = async (question: string) => {
     if (busy || !ready) return;
     setNote("");
-    setBusy({ status: "Reading the question", ms: 0 });
-    const m = await askModel(question, contextFor(), (status) => setBusy({ status, ms: 0 })).catch((e: Error) => ({ error: `The question could not be answered: ${e.message}` }));
+    setBusy({ status: "Analyzing question", ms: 0 });
+    const m = await askModel(question, contextFor(), (status) => setBusy({ status, ms: 0 })).catch((e: Error) => { console.error(e); return { error: "Error querying data" }; });
     setBusy(null);
     if ("answer" in m) { show(question, m.answer, m.previousSummary); return; }
     if ("password" in m) {
@@ -482,20 +539,30 @@ export function Ask() {
     tip.show((e.target as Element).closest("[data-id]")!, <RowTip a={data.answer} data={data.loaded} m={m} />, { card: true });
   };
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const pick = (e: ReactMouseEvent<SVGGElement>) => {
-    const m = markOf(e);
-    if (!m || !data) return;
+  const pickMark = (m: MarkT, at?: { x: number; y: number }) => {
+    if (!data) return;
     const L = data.answer.layers[m.layer];
     const ent = entityIn(m.row, L.from ? data.answer.tables[L.from]?.key : undefined);
     tip.hide();
-    if (ent) setPop(pop?.mark === m.id ? null : { ent, mark: m.id });
+    if (ent) setPop(pop?.mark === m.id ? null : { ent, mark: m.id, at });
     else toggle(m.id);
+  };
+  const pick = (e: ReactMouseEvent<SVGGElement>) => { const m = markOf(e); if (m) pickMark(m); };
+  const hover3d = (m: MarkT | null, at: { x: number; y: number }) => {
+    if (!m || !data) { tip.hide(); return; }
+    tip.show(at, <RowTip a={data.answer} data={data.loaded} m={m} />, { card: true });
+  };
+  const onSpace = (v: "flat" | "deep") => {
+    if (v === "deep") { setLeaving(false); setSpace("deep"); }
+    else if (space === "deep") setLeaving(true);
   };
   useEffect(() => { setPop(null); }, [h.head]);
   const popMark = pop ? sc?.marks.find((m) => m.id === pop.mark) : undefined;
+  const has3d = typeof navigator !== "undefined" && "gpu" in navigator;
 
   const base = data?.answer ?? answer;
   const shown = base && form ? { ...base, form } : base;
+  const deep = space === "deep" && !!sc?.frame && (shown?.form ?? "chart") === "chart";
   const filters = data?.loaded.filters ?? [];
   const suggestions = ready ? suggest({ current: answer, selection: [...sel] }) : [];
   const rowsOf = (l: { from?: string }) => (l.from ? data?.loaded.results[l.from]?.rows.length ?? 0 : 0);
@@ -521,15 +588,25 @@ export function Ask() {
               {filters.map((f) => <FilterChip key={f.id} f={f} labels={shown.labels} onEdit={onFilter} />)}
               {Object.entries(shown.params ?? {}).map(([k, p]) => <ParamChip key={k} k={k} p={p} onSet={onParam} />)}
             </div>
+            {brk ? <BreakMenu b={brk} units={shown.unit?.[1] ?? "rows"} picked={pickedBands.length} onSplit={onSplit} onList={onList} /> : null}
+            {has3d && (shown.form ?? "chart") === "chart" && sc?.frame ? <Segmented label="Space" value={space === "deep" && !leaving ? "deep" : "flat"} onChange={onSpace} options={[{ value: "flat", label: "Flat" }, { value: "deep", label: "3D", tip: "Drag to turn, scroll to zoom" }]} /> : null}
             <Segmented label="Form" value={shown.form ?? "chart"} onChange={onForm} options={[{ value: "chart", label: "Chart" }, { value: "table", label: "Table" }]} />
           </div>
         ) : null}
       </header>
-      <div className="ask-stage" ref={box} onPointerDown={(e) => { if (!(e.target as Element).closest(".ask-axis")) setAxisMenu(null); }}>
+      <div className="ask-stage" ref={box} data-space={deep && !leaving ? "deep" : "flat"} data-flow={theme.gpu.money.mode} onPointerDown={(e) => { if (!(e.target as Element).closest(".ask-axis")) setAxisMenu(null); }}>
+        {deep && sc && data ? <Deep sc={sc} a={data.answer} map={map} theme={theme} sel={sel} leaving={leaving} onLeft={() => { setSpace("flat"); setLeaving(false); }} onHover={hover3d} onPick={pickMark} /> : null}
         <svg width={W} height={sc?.height ?? H} role="img" aria-label={shown?.title ?? "Empty stage"}>
           <defs>
             <pattern id="ask-hatch-p" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="1.6" height="4" fill="#fff" /></pattern>
             <marker id="ask-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0 0.5 8 4 0 7.5Z" fill="context-stroke" /></marker>
+            {PAINT_TONES.map(([t, v]) => (
+              <g key={t}>
+                <pattern id={`ask-ph-${t}`} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" style={{ fill: `color-mix(in srgb, var(${v}) 14%, transparent)` }} /><rect width="1.3" height="4" style={{ fill: `var(${v})` }} /></pattern>
+                <pattern id={`ask-pd-${t}`} width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.15" style={{ fill: `var(${v})` }} /></pattern>
+                <pattern id={`ask-ps-${t}`} width="5" height="5" patternUnits="userSpaceOnUse"><rect width="4" height="5" style={{ fill: `var(${v})` }} /></pattern>
+              </g>
+            ))}
             <mask id="ask-hatch" maskUnits="userSpaceOnUse" x="-2000" y="-2000" width="4000" height="4000"><rect x="-2000" y="-2000" width="4000" height="4000" fill="url(#ask-hatch-p)" /></mask>
           </defs>
           <text ref={probe} className="ask-probe" x={-9999} y={-9999} aria-hidden="true" />
@@ -546,6 +623,7 @@ export function Ask() {
           ) : null}
           <g ref={linkLayer} className="ask-links" />
           <g ref={marks} className="ask-marks" onPointerOver={over} onPointerOut={() => { engine.current?.light(new Set()); tip.hide(); }} onClick={pick} />
+          <g key={`o${h.head}-${shown?.form}`} className="ask-chrome">{sc?.over}</g>
         </svg>
         {sc?.columns ? (
           <div className="ask-th">
@@ -565,7 +643,7 @@ export function Ask() {
             </span>
           );
         })}
-        {pop && popMark ? <EntityPop id={pop.ent} x={popMark.x + popMark.w / 2} y={popMark.y} w={W} h={sc?.height ?? H} selected={sel.has(popMark.id)} onAsk={(q) => { setPop(null); run(q); }} onSelect={() => toggle(popMark.id)} onClose={() => setPop(null)} /> : null}
+        {pop && popMark ? <EntityPop id={pop.ent} x={pop.at?.x ?? popMark.x + popMark.w / 2} y={pop.at?.y ?? popMark.y} w={W} h={sc?.height ?? H} selected={sel.has(popMark.id)} onAsk={(q) => { setPop(null); run(q); }} onSelect={() => toggle(popMark.id)} onClose={() => setPop(null)} /> : null}
         {!head ? (
           <div className="ask-empty">
             <p className="note">{ready ? "Ask a question to begin analysis." : "Loading the case records into the page"}</p>
@@ -574,7 +652,7 @@ export function Ask() {
       </div>
       <aside className="ask-side">
         <h4 className="sub-h">History</h4>
-        {h.nodes.length ? <Tree h={h} onPick={checkout} /> : <p className="note">Questions and edits appear here as a tree. Asking from an earlier answer starts a branch.</p>}
+        {h.nodes.length ? <Tree h={h} onPick={checkout} /> : null}
       </aside>
       <form className="ask-bar" onSubmit={submit}>
         <label className="search">
@@ -582,12 +660,11 @@ export function Ask() {
           <input ref={input} type="text" value={q} placeholder={head && head.id !== Math.max(...h.nodes.map((n) => n.id)) ? "Ask from this answer to start a branch" : "Ask about the case"} aria-label="Ask about the case" onChange={(e) => setQ(e.target.value)} />
           <kbd>/</kbd>
         </label>
-        <div className="chips ask-next">
-          {busy ? <span className="ask-status"><i />{busy.status}</span> : suggestions.map((s) => <button key={s} type="button" className="chip" onClick={() => run(s)}>{s}</button>)}
+        <div className="ask-next">
+          {busy ? <span className="ask-status"><i />{busy.status}</span> : suggestions.length ? <><span className="ask-next-h">Suggestions:</span>{suggestions.map((s) => <button key={s} type="button" onClick={() => run(s)}>{s}</button>)}</> : null}
         </div>
         <div className="ask-foot">
           {note ? <p className="note" aria-live="polite">{note}</p> : null}
-          {sc ? <Key entries={sc.key} /> : null}
         </div>
       </form>
     </section>

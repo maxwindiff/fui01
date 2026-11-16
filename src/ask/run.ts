@@ -41,6 +41,17 @@ async function loadNow(a: Answer): Promise<Loaded> {
   }
   const cols: Record<string, Column[]> = Object.fromEntries(Object.entries(results).map(([k, r]) => [k, r.columns]));
   errors.push(...check(a, cols));
+  // Links are drawn between the marks of point layers, so links whose ends match no point draw nothing.
+  const keys = new Set(a.layers.filter((l) => l.mark === "point" && l.from && results[l.from]).flatMap((l) => {
+    const key = a.tables[l.from!]?.key;
+    return key ? results[l.from!].rows.map((r) => String(r[key])) : [];
+  }));
+  a.layers.forEach((l, i) => {
+    const e = l.encoding ?? {};
+    if (l.mark !== "link" || !l.from || !results[l.from]?.rows.length || !e.source?.field || !e.target?.field) return;
+    if (!results[l.from].rows.some((r) => keys.has(String(r[e.source!.field!])) && keys.has(String(r[e.target!.field!]))))
+      errors.push(`layers[${i}]: no link has both ends among the keys of a point layer. Add a point layer of the entities at both ends, from a table keyed by the ids the links use, with layout "network".`);
+  });
   const filters: Filter[] = [];
   for (const [name, t] of Object.entries(a.tables)) {
     if (!results[name]) continue;

@@ -82,13 +82,13 @@ function DocGlance() {
   return <>{DOCS.find((d) => d.id === doc)!.title}</>;
 }
 
-function Frame({ children }: { children: ReactNode }) {
+function Frame({ children, credit }: { children: ReactNode; credit: boolean }) {
   const stage = useWs((s) => s.stage);
   const inspecting = useWs((s) => s.trail.length > 0);
   return (
     <div className="shell" data-inspect={inspecting ? "" : undefined}>
       <main className="board" data-stage={stage ?? undefined}>{children}</main>
-      <footer className="foot">All names and figures are invented. The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</footer>
+      <footer className="foot">All names and figures are invented.{credit ? <> The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</> : null}</footer>
     </div>
   );
 }
@@ -100,16 +100,16 @@ function CaseBoard({ theme }: { theme: Theme }) {
   return (
     <>
       <Masthead theme={theme} />
-      <Panel fig="01" title={T["01"]} span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
+      <Panel fig="01" title={T["01"]} ask="Who is Whitcombe connected to?" span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
       <Panel fig="02" title={T["02"]} span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
       <Panel fig="03" title={T["03"]} span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
-      <Panel fig="04" title={T["04"]} meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
-      <Panel fig="05" title={T["05"]} meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
-      <Panel fig="06" title={T["06"]} meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
-      <Panel fig="07" title={T["07"]} span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
-      <Panel fig="08" title={T["08"]} span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
+      <Panel fig="04" title={T["04"]} ask="Which states do Whitcombe's donors live in?" meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
+      <Panel fig="05" title={T["05"]} ask="What led up to the award?" meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
+      <Panel fig="06" title={T["06"]} ask="Who funds Whitcombe?" meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
+      <Panel fig="07" title={T["07"]} ask="How much did each client spend on lobbying per quarter?" span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
+      <Panel fig="08" title={T["08"]} ask="Compare aerospace giving to Whitcombe and Brandt" span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
       <Panel fig="09" title={T["09"]} span={8} glance="Six offices over 18 months"><Multiples /></Panel>
-      <Panel fig="10" title={T["10"]} span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
+      <Panel fig="10" title={T["10"]} ask="Which firms filed lobbying disclosures for Halvorsen?" span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
       <Panel fig="11" title={T["11"]} span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
       <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
       <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
@@ -145,6 +145,11 @@ export function App() {
   useEffect(() => {
     history.replaceState(null, "", `#${theme.id}${page === "ask" ? "/ask" : ""}`);
   }, [theme, page]);
+
+  const draft = useWs((s) => s.draft);
+  useEffect(() => {
+    if (draft !== null && page !== "ask") { setPage("ask"); scrollTo(0, 0); }
+  }, [draft, page]);
 
   const go = (next: Page) => {
     if (next === page) return;
@@ -188,8 +193,8 @@ export function App() {
         <BriefButton />
       </header>
       <BriefMenu />
-      <Frame key={`${theme.id}/${page}`}>
-        {page === "ask" ? <Suspense fallback={null}><Ask /></Suspense> : <CaseBoard theme={theme} />}
+      <Frame key={`${theme.id}/${page}`} credit={page === "case"}>
+        {page === "ask" ? <Suspense fallback={null}><Ask theme={theme} /></Suspense> : <CaseBoard theme={theme} />}
       </Frame>
       <Inspector />
     </>

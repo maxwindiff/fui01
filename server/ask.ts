@@ -167,7 +167,7 @@ export async function handle(req: Request, env: Env): Promise<Response> {
   const c = data.choices[0];
   if (c.message!.tool_calls?.some((t) => t.function.name === "refuse")) {
     if (!dev) for (const { ms } of LIMITS.perIp) for (let i = 0; i < LIMITS.refusalCalls; i++) record(`ip:${ms}:${ip}`, now);
-    return json(200, { refused: true, error: "That isn't a question about the case data, so it was not answered. Refused inputs count ten times against this address's limit." });
+    return json(200, { refused: true, error: "Error querying data" });
   }
   return json(200, { message: { role: "assistant", content: c.message!.content ?? "", tool_calls: c.message!.tool_calls }, finish: c.finish_reason, usage: data.usage, round, rounds: LIMITS.rounds });
 }

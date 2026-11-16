@@ -107,7 +107,7 @@ async function runShow(args: string, question: string): Promise<{ answer: Answer
 
 export async function askModel(question: string, context: ModelContext, onStatus: (s: string) => void): Promise<ModelReply> {
   const turns: Turn[] = [];
-  onStatus("Reading the question");
+  onStatus("Analyzing question");
   for (;;) {
     let r: Response;
     try {
@@ -122,7 +122,7 @@ export async function askModel(question: string, context: ModelContext, onStatus
     if (import.meta.env.DEV) log({ question, model: devModel(), round: turns.length, status: r.status, usage: data?.usage, refused: data?.refused, message: data?.message ?? data?.error });
     if (data?.code === "unconfigured") return { unavailable: true };
     if (r.status === 401) return { password: data?.error ?? "The password is missing or wrong." };
-    if (data?.refused) return { error: data.error ?? "The question was refused." };
+    if (data?.refused) return { error: "Error querying data" };
     if (!r.ok || !data?.message) return { error: data?.error ?? `The model call failed (${r.status}).` };
 
     const msg = data.message;
@@ -131,7 +131,7 @@ export async function askModel(question: string, context: ModelContext, onStatus
     for (const call of msg.tool_calls) {
       let content: string;
       if (call.function.name === "query") {
-        onStatus("Looking at the data");
+        onStatus("Querying data");
         try { content = await runQuery(String(JSON.parse(call.function.arguments).sql ?? "")); } catch (e) { content = `Error: ${(e as Error).message.split("\n")[0]}`; }
       } else if (call.function.name === "show") {
         onStatus("Checking the view");

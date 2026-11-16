@@ -20,7 +20,7 @@ export class Engine {
   private links = new Map<string, Link>();
   private raf = 0;
 
-  constructor(private layer: SVGGElement, private linkLayer: SVGGElement) {}
+  constructor(private layer: SVGGElement, private linkLayer: SVGGElement, private curve = 0) {}
 
   apply(targets: MarkT[], links: LinkT[], mv: Move) {
     const still = motion.level === 0 || mv.dur === 0;
@@ -157,8 +157,9 @@ export class Engine {
       const ra = Math.min(a.w, a.h) / 2, rb = Math.min(b.w, b.h) / 2 + (l.t.dir ? 3 : 0);
       if (d <= ra + rb) { l.el.setAttribute("d", ""); continue; }
       const x1 = a.x + (dx / d) * ra, y1 = a.y + (dy / d) * ra, x2 = b.x - (dx / d) * rb, y2 = b.y - (dy / d) * rb;
-      // Directed links bow to one side, so ties in both directions between a pair stay apart.
-      const bow = l.t.dir ? Math.min(28, d * 0.12) : 0;
+      // Links bend by the theme's curve. Directed links bow to one side at least a little, so ties in both directions
+      // between a pair stay apart.
+      const bow = Math.max(l.t.dir ? Math.min(28, d * 0.12) : 0, d * this.curve * 0.5);
       const mx = (x1 + x2) / 2 - (dy / d) * bow, my = (y1 + y2) / 2 + (dx / d) * bow;
       l.el.setAttribute("d", bow ? `M${x1.toFixed(1)} ${y1.toFixed(1)}Q${mx.toFixed(1)} ${my.toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}` : `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`);
     }

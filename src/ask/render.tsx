@@ -14,9 +14,12 @@ export interface Label { text: string; dx: number; dy: number; anchor: "start" |
 export interface MarkT { id: string; x: number; y: number; w: number; h: number; rx: number; rot: number; cls: string; src?: string[]; layer: number; row: Record<string, unknown>; label?: Label; want?: string }
 export interface LinkT { id: string; a: string; b: string; cls: string; w: number; dir: boolean }
 export interface KeyItem { label: string; cls: string; shape: string }
-export interface KeyEntry { title: string; items: KeyItem[] }
+export interface KeyEntry { title: string; items: KeyItem[]; rank?: number }
 export interface AxisTitle { axis: "x" | "y"; text: string; x: number; y: number; field: string; anchor: "start" | "end" }
-export interface Scene { marks: MarkT[]; links: LinkT[]; chrome: ReactNode; key: KeyEntry[]; titles: AxisTitle[]; height: number; columns?: TableCol[]; rows?: TableRow[] }
+export interface Tick { p: number; label: string }
+// The plot area and its ticks, for the 3D view, which lays its ground out over the same area.
+export interface Frame { x0: number; y0: number; x1: number; y1: number; xt: Tick[]; yt: Tick[]; xBand: boolean; yBand: boolean; map?: { ox: number; oy: number; s: number } }
+export interface Scene { marks: MarkT[]; links: LinkT[]; chrome: ReactNode; over?: ReactNode; key: KeyEntry[]; titles: AxisTitle[]; height: number; columns?: TableCol[]; rows?: TableRow[]; frame?: Frame }
 export interface TableCol { field: string; label: string; x: number; w: number; num: boolean; type: string }
 export interface TableRow { id: string; y: number; cells: string[] }
 
@@ -122,16 +125,21 @@ function keyEntries(a: Answer, ls: L[], seen: Map<string, string[]>): KeyEntry[]
     const line = L.l.mark === "link";
     const base = looks(a, L, {}, new Map());
     const lead = ls.filter((x) => x.l.from && !["rule", "text", "link"].includes(x.l.mark)).sort((p, q) => q.rows.length - p.rows.length)[0];
-    if (!line && L === lead && a.unit && !L.rows.some((r) => Array.isArray(r.source_rows))) {
-      const size = L.l.encoding.size?.field;
-      out.push({ title: "", items: [{ label: `${a.unit[0][0].toUpperCase()}${a.unit[0].slice(1)}${size ? `, sized by ${labelOf(a, size).toLowerCase()}` : ""}`, cls: base.cls, shape: base.shape }] });
-    }
     // Channels mapped from the same field share an entry, so each value shows its tone and shape together.
     const fields = new Map<string, Look[]>();
     for (const ch of CHANNELS) {
       const c = L.l.encoding[ch];
       const field = c?.field ?? (c?.value === undefined ? autoField(L, ch) : undefined);
       if (field) fields.set(field, [...(fields.get(field) ?? []), ch]);
+    }
+    // The unit entry shows what a single mark stands for. When the marks take their shape from a field, its swatch
+    // matches none of them, and when the unit is also the name of a mapped field the two entries read the same.
+    const unit = a.unit?.[0].toLowerCase();
+    const shaped = [...fields.values()].some((chs) => chs.includes("shape"));
+    const echoed = [...fields.keys()].some((f) => labelOf(a, f).toLowerCase() === unit);
+    if (!line && L === lead && a.unit && !shaped && !echoed && !L.rows.some((r) => Array.isArray(r.source_rows))) {
+      const size = L.l.encoding.size?.field;
+      out.push({ title: "", items: [{ label: `${a.unit[0][0].toUpperCase()}${a.unit[0].slice(1)}${size ? `, sized by ${labelOf(a, size).toLowerCase()}` : ""}`, cls: base.cls, shape: base.shape }] });
     }
     for (const [field, chs] of fields) {
       const id = `${L.l.from}:${field}`;
@@ -140,6 +148,7 @@ function keyEntries(a: Answer, ls: L[], seen: Map<string, string[]>): KeyEntry[]
       const vals = [...new Set(L.rows.map((r) => String(r[field])))].slice(0, 8);
       if (vals.length < 2 && !chs.includes("fill")) continue;
       out.push({
+        rank: line || chs.includes("tone") ? 0 : chs.includes("shape") ? 1 : chs.includes("fill") ? 2 : 3,
         title: labelOf(a, field),
         items: vals.map((v) => {
           const row = { ...L.rows.find((r) => String(r[field]) === v) };
@@ -154,7 +163,18 @@ function keyEntries(a: Answer, ls: L[], seen: Map<string, string[]>): KeyEntry[]
       });
     }
   }
-  return out;
+  // Layers that map the same field show one group, listing each value once for every look it takes.
+  const merged: KeyEntry[] = [];
+  for (const e of out) {
+    const into = e.title ? merged.find((m) => m.title === e.title) : undefined;
+    if (!into) { merged.push({ ...e, items: [...e.items] }); continue; }
+    for (const it of e.items) if (!into.items.some((x) => x.label === it.label && x.cls === it.cls && x.shape === it.shape)) into.items.push(it);
+  }
+  // At most two groups show, preferring colour, then shape, then the rest. The fields left out still show in each
+  // mark's tip.
+  if (merged.length <= 2) return merged;
+  const keep = new Set([...merged].sort((p, q) => (p.rank ?? 0) - (q.rank ?? 0)).slice(0, 2));
+  return merged.filter((e) => keep.has(e));
 }
 
 // Text widths come from the page, which measures them in the theme's fonts. The fallback is a rough average.
@@ -172,6 +192,51 @@ const axisChannel = (ls: L[], ax: "x" | "y") => {
   const chs = ls.filter((L) => L.l.mark !== "rule" && L.l.mark !== "text").map((L) => L.l.encoding[ax]).filter((c) => c?.field);
   return chs.find((c) => c!.title) ?? chs[0] ?? ls.map((L) => L.l.encoding[ax]).find((c) => c?.field);
 };
+
+// The key sits in the top right corner of the chart, in rows that wrap and line up on the right edge.
+const KEY_ROW = 18;
+function keyLayout(entries: KeyEntry[], right: number, room: number) {
+  type Tok = { w: number; title?: string; item?: KeyItem; lead: boolean };
+  const toks: Tok[] = entries.flatMap((e) => [
+    ...(e.title ? [{ w: textW(e.title, "c-label") + 8, title: e.title, lead: true }] : []),
+    ...e.items.map((it, i) => ({ w: 17 + textW(it.label, "c-label") + 14, item: it, lead: !e.title && i === 0 })),
+  ]);
+  const rows: Tok[][] = [[]];
+  let used = 0;
+  for (const t of toks) {
+    const gap = t.lead && rows[rows.length - 1].length ? 12 : 0;
+    if (used + gap + t.w > room && rows[rows.length - 1].length) { rows.push([]); used = 0; }
+    rows[rows.length - 1].push(t);
+    used += (rows[rows.length - 1].length > 1 ? gap : 0) + t.w;
+  }
+  if (!toks.length) return { height: 0, node: null };
+  const node = (top: number) => (
+    <g key="key" className="ask-legend">
+      {rows.map((row, r) => {
+        const width = row.reduce((s, t, i) => s + t.w + (i && t.lead ? 12 : 0), 0) - 14;
+        let x = right - width;
+        const y = top + r * KEY_ROW + 9;
+        return row.map((t, i) => {
+          if (i && t.lead) x += 12;
+          const at = x;
+          x += t.w;
+          if (t.title) return <text key={`${r}-${i}`} className="c-label dim" x={at} y={y + 4}>{t.title}</text>;
+          const it = t.item!;
+          const d = it.shape === "diamond" ? 7.5 : 9;
+          return (
+            <g key={`${r}-${i}`}>
+              {it.shape === "line"
+                ? <path className={`ask-link ${it.cls}`} d={`M${at} ${y}H${at + 12}`} />
+                : <g className={`ask-m ask-sw-m ${it.cls}`} transform={`translate(${at + 6} ${y})${it.shape === "diamond" ? " rotate(45)" : ""}`}><rect x={-d / 2} y={-d / 2} width={d} height={d} rx={it.shape === "dot" || it.shape === "ring" ? d / 2 : 0} /></g>}
+              <text className="c-label" x={at + 17} y={y + 4}>{it.label}</text>
+            </g>
+          );
+        });
+      })}
+    </g>
+  );
+  return { height: rows.length * KEY_ROW + 6, node };
+}
 
 export function scene(a: Answer, data: Loaded, W: number, H: number, map: MapData | null, scope: string): Scene {
   const ls: L[] = a.layers.map((l, i) => ({
@@ -225,7 +290,10 @@ function tableScene(a: Answer, ls: L[], W: number, H: number, idOf: (L: L, r: Re
     return { id, x: 17, y, w, h, rx: lk.shape === "dot" ? 4.5 : 0, rot: lk.shape === "diamond" ? 45 : 0, cls: lk.cls, src: srcOf(r), layer: L.i, row: r };
   });
   const tableRows: TableRow[] = rows.map(({ r, id }, k) => ({ id, y: top + k * RH, cells: cols.map((c) => fmtValue(a, c.name, r[c.name], c.type)) }));
-  return { marks, links: [], chrome: null, key: keyEntries(a, [L], seen), titles: [], height: Math.max(H, top + rows.length * RH + 12), columns, rows: tableRows };
+  const key = keyEntries(a, [L], seen);
+  const kl = keyLayout(key, W - 12, W - 24);
+  const end = top + rows.length * RH + 12;
+  return { marks, links: [], chrome: kl.node?.(end), key, titles: [], height: Math.max(H, end + kl.height + 8), columns, rows: tableRows };
 }
 
 function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | null, idOf: (L: L, r: Record<string, unknown>, j: number) => string, srcOf: (r: Record<string, unknown>) => string[] | undefined): Scene {
@@ -294,7 +362,26 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
   const yCats = ky === "nominal" || ky === "ordinal" ? cats("y") : [];
   const xCats = kx === "nominal" || kx === "ordinal" ? cats("x") : [];
   const ml = placeMode ? 16 : yCats.length ? Math.min(200, 18 + Math.max(...yCats.map((c) => textW(c)))) : ky ? 58 : 16;
-  const mt = (ky && ky !== "nominal" && ky !== "ordinal" ? 38 : 26) + callouts.length * 34;
+  // The key's height is worked out before the marks are placed. Tokens are assigned in a throwaway map here, since the
+  // real assignment follows the order in which the marks take them.
+  const keyH = keyLayout(keyEntries(a, ls, new Map()), W - 22, W * 0.62).height;
+  // A short callout reads as a headline. A longer one is set smaller, and either kind wraps to the plot's width.
+  let callY = keyH + 16;
+  const callSet = callouts.map((L) => {
+    const text = L.rows.map((r) => String(L.l.encoding.text?.field ? r[L.l.encoding.text.field] : L.l.encoding.text?.value ?? "")).join("  ");
+    const cls = text.length > 60 ? "ask-callout small" : "ask-callout";
+    const lh = text.length > 60 ? 20 : 30;
+    const lines: string[] = [];
+    for (const word of text.split(/\s+/)) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && textW(`${last} ${word}`, cls) <= W - ml - 22) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    const at = callY;
+    callY += lines.length * lh + 12;
+    return { L, cls, lh, lines, at };
+  });
+  const mt = (ky && ky !== "nominal" && ky !== "ordinal" ? 38 : 26) + (callY - keyH - 16) + keyH;
   const mb = placeMode ? 12 : kx ? 46 : 16;
   const mr = 22;
   const X0 = ml, X1 = W - mr, Y0 = mt, Y1 = H - mb;
@@ -325,13 +412,19 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
 
   const marks: MarkT[] = [];
   const chrome: ReactNode[] = [];
+  // Rules and text marks annotate the data, so they are drawn over the marks.
+  const over: ReactNode[] = [];
+  // A label goes to the right of its anchor, or to the left when it would run past the plot.
+  const beside = (x: number, gap: number, s: string) => (x + gap + textW(s) > X1 + 8 ? { x: x - gap, textAnchor: "end" as const } : { x: x + gap });
   const titles: AxisTitle[] = [];
 
   // Map backdrop.
   let proj: ((code: string) => [number, number] | null) | null = null;
+  let mapT: Frame["map"];
   if (placeMode && map) {
     const s = Math.min(pw / map.w, ph / map.h);
     const ox = X0 + (pw - map.w * s) / 2, oy = Y0 + (ph - map.h * s) / 2;
+    mapT = { ox, oy, s };
     chrome.push(<path key="map" className="ask-map" d={map.d} transform={`translate(${ox.toFixed(1)} ${oy.toFixed(1)}) scale(${s.toFixed(4)})`} />);
     proj = (code) => { const c = map.cent[code]; return c ? [ox + c[0] * s, oy + c[1] * s] : null; };
   }
@@ -385,20 +478,19 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
     if (L.l.mark === "rule") {
       items.forEach((p, k) => {
         const lab = e.text?.field ? String(p.r[e.text.field]) : null;
-        if (p.x !== null && sx) { const x = sx.pos(p.x); chrome.push(<g key={`r${L.i}-${k}`}><line className={`ask-rule ${looks(a, L, p.r, seen).cls}`} x1={x} x2={x} y1={Y0} y2={Y1} />{lab ? <text className="c-label halo" x={x + 4} y={Y0 + 10}>{lab}</text> : null}</g>); }
-        if (p.y !== null && sy) { const y = sy.pos(p.y); chrome.push(<g key={`r${L.i}-${k}`}><line className={`ask-rule ${looks(a, L, p.r, seen).cls}`} x1={X0} x2={X1} y1={y} y2={y} />{lab ? <text className="c-label halo" x={X1} y={y - 5} textAnchor="end">{lab}</text> : null}</g>); }
+        if (p.x !== null && sx) { const x = sx.pos(p.x); over.push(<g key={`r${L.i}-${k}`}><line className={`ask-rule ${looks(a, L, p.r, seen).cls}`} x1={x} x2={x} y1={Y0} y2={Y1} />{lab ? <text className="c-label halo" {...beside(x, 4, lab)} y={Y0 + 10}>{lab}</text> : null}</g>); }
+        if (p.y !== null && sy) { const y = sy.pos(p.y); over.push(<g key={`r${L.i}-${k}`}><line className={`ask-rule ${looks(a, L, p.r, seen).cls}`} x1={X0} x2={X1} y1={y} y2={y} />{lab ? <text className="c-label halo" x={X1} y={y - 5} textAnchor="end">{lab}</text> : null}</g>); }
       });
       continue;
     }
     if (L.l.mark === "text") {
       if (!e.x && !e.y) {
-        const k = callouts.indexOf(L);
-        const lines = items.map((p) => String(e.text?.field ? p.r[e.text.field] : e.text?.value ?? ""));
-        chrome.push(<text key={`c${L.i}`} className="ask-callout" x={X0} y={16 + k * 34 + 14}>{lines.join("  ")}</text>);
+        const c = callSet.find((s) => s.L === L)!;
+        chrome.push(<text key={`c${L.i}`} className={c.cls}>{c.lines.map((t, j) => <tspan key={j} x={X0} y={c.at + 14 + j * c.lh}>{t}</tspan>)}</text>);
       } else items.forEach((p, k) => {
         const f = e.text?.field;
         const label = f ? fmtValue(a, f, p.r[f], colOf(L, f)?.type) : String(e.text?.value ?? "");
-        chrome.push(<text key={`t${L.i}-${k}`} className="c-label ink halo" x={center(sx, p.x, X0, X1) + 6} y={center(sy, p.y, Y1, Y0) + 4}>{label}</text>);
+        over.push(<text key={`t${L.i}-${k}`} className="c-label ink halo" {...beside(center(sx, p.x, X0, X1), 6, label)} y={center(sy, p.y, Y1, Y0) + 4}>{label}</text>);
       });
       continue;
     }
@@ -532,7 +624,11 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
       links.push({ id: L.key && r[L.key] != null ? `link:${r[L.key]}` : `link:${L.i}:${s0}>${t0}:${j}`, a: s0, b: t0, cls: `${lk.cls}${dir ? " s-arrow" : ""}`, w: sizeF ? 0.6 + (num(r[sizeF]) / wMax) * 3 : 1, dir });
     });
   }
-  return { marks, links, chrome, key: keyEntries(a, ls, seen), titles, height: H };
+  const key = keyEntries(a, ls, seen);
+  chrome.push(keyLayout(key, W - 22, W * 0.62).node?.(6));
+  const inX = (t: Tick) => t.p >= X0 - 1 && t.p <= X1 + 1, inY = (t: Tick) => t.p >= Y0 - 1 && t.p <= Y1 + 1;
+  const frame: Frame = { x0: X0, y0: Y0, x1: X1, y1: Y1, xt: sx?.ticks.filter(inX) ?? [], yt: sy?.ticks.filter(inY) ?? [], xBand: sx?.kind === "band", yBand: sy?.kind === "band", map: mapT };
+  return { marks, links, chrome, over, key, titles, height: H, frame };
 }
 
 // Labels go to the right of a mark, or above, below or to its left when that spot is taken. A label inside a bar
