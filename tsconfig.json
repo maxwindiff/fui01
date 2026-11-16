@@ -10,7 +10,7 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
-    "types": ["vite/client", "@webgpu/types"]
+    "types": ["vite/client", "@webgpu/types", "node"]
   },
-  "include": ["src"]
+  "include": ["src", "server", "api", "vite.config.ts"]
 }

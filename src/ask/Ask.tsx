@@ -3,13 +3,15 @@ import type { FormEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPoi
 import { Segmented, useSize } from "../components/primitives";
 import { tip, TipRow } from "../tip";
 import { ask, suggest } from "./agent";
+import { askModel, current, savePassword } from "./model";
+import type { ModelContext } from "./model";
 import { connect } from "./db";
 import { Engine } from "./engine";
 import type { Move } from "./engine";
 import { describe, editFilter, fromMs, toMs } from "./filters";
 import type { Filter, FilterEdit, Op } from "./filters";
 import { fmtDate, fmtValue } from "./format";
-import { askOf, commit, EMPTY_HISTORY, folded, graph, node, path } from "./history";
+import { annotate, askOf, commit, EMPTY_HISTORY, folded, graph, node, path } from "./history";
 import type { History, VNode } from "./history";
 import { loadMapData } from "./map";
 import type { MapData } from "./map";
@@ -420,18 +422,49 @@ export function Ask() {
     }), { dur: 800, stagger: 240 });
   };
 
-  const run = async (question: string) => {
-    if (busy || !ready) return;
-    setNote("");
-    const r = await ask(question, { current: answer, selection: [...sel] });
-    if ("error" in r) { setNote(r.error); return; }
+  // Earlier questions on this branch go to the model as text: each question, the summary of its view as the reader
+  // left it, and the edits made to it. The current view goes in full, with the first rows of its tables.
+  const contextFor = (): ModelContext => {
+    const hh = hRef.current;
+    const p = path(hh);
+    const cur = askOf(hh)?.id;
+    const editsOf = (id: number) => p.filter((e) => e.kind === "edit" && askOf(hh, e.id)?.id === id).map((e) => e.label);
+    const past = p.filter((n) => n.kind === "ask" && n.id !== cur).slice(-5).map((n) => ({
+      question: n.label,
+      summary: [...p].reverse().find((m) => askOf(hh, m.id)?.id === n.id)?.summary,
+      edits: editsOf(n.id),
+    }));
+    const selection = (sc?.marks ?? []).filter((m) => sel.has(m.id)).slice(0, 15).map((m) => m.row as Record<string, unknown>);
+    const now = cur !== undefined && data ? current(node(hh, cur)!.label, editsOf(cur), data.answer, data.loaded.results) : null;
+    return { past, current: now, selection };
+  };
+  const show = (question: string, a: Answer, previousSummary?: string) => {
     setQ("");
     setSel(new Set());
     setForm(null);
     nextMove.current = { dur: 450, arrive: 250, stagger: 120 };
-    const h2 = commit(hRef.current, "ask", question, r.answer);
+    const from = hRef.current.head;
+    const h1 = previousSummary && from >= 0 ? annotate(hRef.current, from, previousSummary) : hRef.current;
+    const h2 = commit(h1, "ask", question, a);
     hRef.current = h2;
     setH(h2);
+  };
+  const run = async (question: string) => {
+    if (busy || !ready) return;
+    setNote("");
+    setBusy({ status: "Reading the question", ms: 0 });
+    const m = await askModel(question, contextFor(), (status) => setBusy({ status, ms: 0 })).catch((e: Error) => ({ error: `The question could not be answered: ${e.message}` }));
+    setBusy(null);
+    if ("answer" in m) { show(question, m.answer, m.previousSummary); return; }
+    if ("password" in m) {
+      const pw = window.prompt(`${m.password} Enter the password to ask questions.`);
+      if (pw) { savePassword(pw); run(question); }
+      return;
+    }
+    if ("error" in m) { setNote(m.error); return; }
+    const r = await ask(question, { current: answer, selection: [...sel] });
+    if ("error" in r) { setNote(r.error); return; }
+    show(question, r.answer);
     setBusy({ status: r.status, ms: r.ms });
     setTimeout(() => setBusy(null), r.ms);
   };
@@ -535,7 +568,7 @@ export function Ask() {
         {pop && popMark ? <EntityPop id={pop.ent} x={popMark.x + popMark.w / 2} y={popMark.y} w={W} h={sc?.height ?? H} selected={sel.has(popMark.id)} onAsk={(q) => { setPop(null); run(q); }} onSelect={() => toggle(popMark.id)} onClose={() => setPop(null)} /> : null}
         {!head ? (
           <div className="ask-empty">
-            <p className="note">{ready ? "The agent writes a query and a description of a view for each question, and the page draws it. Conditions in the query become controls you can drag. Every question and edit stays in the history, where an earlier answer can be picked up again." : "Loading the case records into the page"}</p>
+            <p className="note">{ready ? "Ask a question to begin analysis." : "Loading the case records into the page"}</p>
           </div>
         ) : null}
       </div>

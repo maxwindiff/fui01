@@ -9,7 +9,7 @@ export interface Context { current: Answer | null; selection: string[] }
 export interface Reply { answer: Answer; ms: number; status: string }
 interface Step { id: string; label: string; re: RegExp; ok: (c: Context) => boolean; ms: number; status: string; make: (q: string, c: Context) => Answer }
 
-interface GiftState { recipients: string[]; aero: boolean; layout: "bars" | "time" | "map"; votes: boolean }
+interface GiftState { recipients: string[]; aero: boolean; layout: "bars" | "time" | "map"; votes: boolean; through2025?: boolean }
 const giftState = (a: Answer | null): GiftState | null => (a?.notes?.gifts as GiftState | undefined) ?? null;
 
 function giftAnswer(question: string, s: GiftState): Answer {
@@ -18,7 +18,7 @@ function giftAnswer(question: string, s: GiftState): Answer {
   const where = [
     both ? `recipient IN (${s.recipients.map((r) => `'${r}'`).join(", ")})` : `recipient = '${s.recipients[0]}'`,
     ...(s.aero ? ["sector = 'Aerospace and defense'"] : []),
-    "date <= DATE '2025-12-31'",
+    ...(s.through2025 === false ? [] : ["date <= DATE '2025-12-31'"]),
   ].join("\n  AND ");
   const tables: Answer["tables"] = {};
   const layers: Layer[] = [];
@@ -229,3 +229,12 @@ export async function ask(q: string, c: Context): Promise<Reply | { error: strin
   if (!step) return { error: "The scripted agent answers a fixed set of questions. The suggestions list the ones available from here." };
   return { answer: step.make(q, c), ms: step.ms, status: step.status };
 }
+
+// Answers shown to the model as examples of the format.
+export const examples = (): Answer[] => [
+  ageAnswer("How many donors are 40 or older?", ">=", 40),
+  giftAnswer("Who funds Whitcombe?", { recipients: ["Whitcombe"], aero: false, layout: "bars", votes: false, through2025: false }),
+  timelineAnswer("What led up to the award?"),
+  networkAnswer("Who is Whitcombe connected to?", ALL_TIES, "Dana Whitcombe"),
+  simAnswer("What if Calder recuses?", 20),
+];

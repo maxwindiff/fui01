@@ -4,7 +4,9 @@ import type { Answer } from "./spec";
 // there, as a commit on an old revision does in git. An edit on the page is a small node of its own, and a run of
 // edits to the same control folds into one node while nothing has grown from it yet.
 
-export interface HNode { id: number; parent: number | null; kind: "ask" | "edit"; label: string; answer: Answer; editKey?: string }
+// The summary describes the view as it stood at this node. The model writes it from the view's rows when the next
+// question is asked from here, and later questions get it in place of the view.
+export interface HNode { id: number; parent: number | null; kind: "ask" | "edit"; label: string; answer: Answer; editKey?: string; summary?: string }
 export interface History { nodes: HNode[]; head: number }
 
 export const EMPTY_HISTORY: History = { nodes: [], head: -1 };
@@ -19,6 +21,9 @@ export function commit(h: History, kind: HNode["kind"], label: string, answer: A
   const id = h.nodes.length ? Math.max(...h.nodes.map((n) => n.id)) + 1 : 0;
   return { nodes: [...h.nodes, { id, parent: head ? head.id : null, kind, label, answer, editKey }], head: id };
 }
+
+export const annotate = (h: History, id: number, summary: string): History =>
+  ({ ...h, nodes: h.nodes.map((n) => (n.id === id ? { ...n, summary } : n)) });
 
 export function path(h: History, id = h.head): HNode[] {
   const out: HNode[] = [];

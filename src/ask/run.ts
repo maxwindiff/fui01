@@ -23,6 +23,11 @@ export function load(a: Answer): Promise<Loaded> {
 async function loadNow(a: Answer): Promise<Loaded> {
   const errors: string[] = [];
   const results: Record<string, Result> = {};
+  // Views left by other answers are dropped, so an answer that reads another answer's table fails here rather than
+  // later, when that table is gone or holds something else.
+  const own = new Set(Object.keys(a.tables ?? {}));
+  const stale = await query("SELECT view_name FROM duckdb_views() WHERE temporary AND NOT internal");
+  for (const r of stale.rows) if (!own.has(String(r.view_name))) await exec(`DROP VIEW IF EXISTS ${String(r.view_name)}`);
   for (const [k, p] of Object.entries(a.params ?? {})) await exec(`SET VARIABLE ${k} = ${Number(p.value)}`);
   for (const [name, t] of Object.entries(a.tables)) {
     if (BASE.has(name)) { errors.push(`tables.${name}: the name is taken by a base table`); continue; }
