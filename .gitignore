@@ -6,3 +6,4 @@ dist
 .env
 .vercel
 eval/runs/
+__pycache__/
