@@ -1,5 +1,5 @@
-import { entityInText } from "./entities";
-import { ENTITIES } from "./data";
+import { entityInText } from "./entities.js";
+import { ENTITIES } from "./data.js";
 import type { Answer, Layer } from "./spec";
 
 // A scripted stand-in for the agent. It writes answers in the same format a model would, from a fixed set of

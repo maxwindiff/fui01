@@ -1,4 +1,5 @@
-import { SYSTEM } from "../src/ask/prompt";
+// Vercel runs this file as compiled ES modules without bundling, so the imports on its path name the .js file.
+import { SYSTEM } from "../src/ask/prompt.js";
 
 // Forwards one round of the Ask page's tool loop to OpenRouter. The page runs the tools itself, since the case
 // tables live in DuckDB in the browser, and sends the rounds so far with each request. The server writes the system

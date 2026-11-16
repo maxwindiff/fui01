@@ -1,5 +1,5 @@
-import { GRAPH } from "../data";
-import { EVENTS } from "./data";
+import { GRAPH } from "../data.js";
+import { EVENTS } from "./data.js";
 
 // Finds the case entity a row stands for, so a mark can open that entity's card. Only the row's key and columns
 // that name a party are read, since a gift row also names the donor's employer and the recipient.

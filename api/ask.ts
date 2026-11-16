@@ -1,4 +1,4 @@
-import { handle } from "../server/ask";
+import { handle } from "../server/ask.js";
 
 export const config = { maxDuration: 60 };
 

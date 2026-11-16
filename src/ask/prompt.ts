@@ -1,6 +1,6 @@
-import { examples } from "./agent";
-import { TABLES } from "./data";
-import { CONVENTIONS, TOKENS } from "./spec";
+import { examples } from "./agent.js";
+import { TABLES } from "./data.js";
+import { CONVENTIONS, TOKENS } from "./spec.js";
 
 // The system prompt for the model behind the Ask page. The server builds it once, so it stays the same from one
 // request to the next and the provider can cache it.

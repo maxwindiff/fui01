@@ -1,4 +1,4 @@
-import { GRAPH, mulberry32 } from "../data";
+import { GRAPH, mulberry32 } from "../data.js";
 
 // Base tables of the case, generated with fixed seeds and loaded into DuckDB when the Ask page opens.
 // Dates are ISO strings so that DuckDB reads them as DATE and TIMESTAMP columns.
