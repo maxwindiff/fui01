@@ -339,7 +339,15 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
   const acc = new Map<string, number>();
   for (const L of ls) {
     const e = L.l.encoding;
-    L.rows.forEach((r, j) => {
+    // Stacked parts take the same order in every bar, the largest part overall at the bottom.
+    const tf = e.tone?.field, vf = L.l.mark === "span" ? (valueAxis(L) === "y" ? e.y?.field : valueAxis(L) === "x" ? e.x?.field : undefined) : undefined;
+    const order = L.rows.map((r, j) => ({ r, j }));
+    if (tf && vf && (L.l.adjust === "stack" || L.l.adjust === undefined)) {
+      const total = new Map<string, number>();
+      for (const r of L.rows) total.set(String(r[tf]), (total.get(String(r[tf])) ?? 0) + Math.abs(num(r[vf])));
+      order.sort((p, q) => (total.get(String(q.r[tf])) ?? 0) - (total.get(String(p.r[tf])) ?? 0) || p.j - q.j);
+    }
+    order.forEach(({ r, j }) => {
       const p: Pre = { L, r, j, x: val(L, e.x, r), y: val(L, e.y, r), x2: val(L, e.x2, r), y2: val(L, e.y2, r) };
       if (L.l.mark === "span" && p.x2 === null && p.y2 === null) {
         const vAxis = valueAxis(L);

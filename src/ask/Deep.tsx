@@ -4,7 +4,7 @@ import type { Stroke } from "../gpu/scene";
 import { motion } from "../motion";
 import { rgba } from "../themes";
 import type { RGBA, Theme } from "../themes";
-import { fmtValue } from "./format";
+import { fmtDate, fmtValue } from "./format";
 import type { MapData } from "./map";
 import type { MarkT, Scene } from "./render";
 import type { Answer } from "./spec";
@@ -32,6 +32,21 @@ function niceStep(span: number, count: number) {
   const p = Math.pow(10, Math.floor(Math.log10(raw)));
   const m = raw / p;
   return (m >= 5 ? 10 : m >= 2 ? 5 : m >= 1 ? 2 : 1) * p;
+}
+
+// Dates come through as milliseconds. Quarter starts are named as quarters, and with many of them only the first
+// of each year is named.
+function bandNames(bands: string[]): (i: number) => string | null {
+  const ms = bands.map(Number);
+  if (!ms.every((v) => Number.isFinite(v) && v > 1e11)) return (i) => bands[i];
+  const ds = ms.map((v) => new Date(v));
+  const quarters = ds.every((d) => d.getUTCDate() === 1 && d.getUTCMonth() % 3 === 0);
+  const sparse = bands.length > 12;
+  return (i) => {
+    const d = ds[i], y = d.getUTCFullYear();
+    if (quarters) return sparse ? (d.getUTCMonth() === 0 || i === 0 ? String(y) : null) : `${y} Q${d.getUTCMonth() / 3 + 1}`;
+    return sparse && i % Math.ceil(bands.length / 12) ? null : fmtDate(ms[i]);
+  };
 }
 
 // Ticks up a height axis in the back left corner, with lines along the back edge at each tick.
@@ -125,24 +140,32 @@ export function build(sc: Scene, a: Answer, map: MapData | null): Model | null {
       // Years and other numbers run in order, with Other at the end.
       if (parts.every((v) => v === "Other" || /^-?\d+(\.\d+)?$/.test(v))) parts = parts.sort((p, q) => (p === "Other" ? 1 : q === "Other" ? -1 : Number(p) - Number(q)));
       const grid = parts.length > 1;
-      const nx = grid ? parts.length : bands.length, ny = grid ? bands.length : 1;
-      const cw = pw / nx, rh = grid ? ph / ny : Math.min(ph, cw * 1.6);
-      const gy0 = grid ? f.y0 : f.y0 + (ph - rh) / 2;
+      // Bars over time keep time running across, with a row of columns per part. Otherwise each bar of the flat chart
+      // becomes a row and the parts run across.
+      const across = !grid || bands.length > parts.length;
+      const nx = across ? bands.length : parts.length, ny = across ? parts.length : bands.length;
+      const cw = pw / nx, rh = grid ? Math.min(ph / ny, cw * 4) : Math.min(ph, cw * 1.6);
+      const gy0 = f.y0 + (ph - rh * ny) / 2;
       const half = Math.min(cw, rh) * 0.3;
       const vmax = Math.max(...spans.map((m) => num(m.row[value])));
       for (const m of spans) {
         const bi = bands.indexOf(String(m.row[band])), pi = part ? parts.indexOf(String(m.row[part])) : 0;
-        const x = f.x0 + ((grid ? pi : bi) + 0.5) * cw, y = gy0 + ((grid ? bi : 0) + 0.5) * rh;
+        const x = f.x0 + ((across ? bi : pi) + 0.5) * cw, y = gy0 + ((across ? pi : bi) + 0.5) * rh;
         out.boxes.push({ m, x, y, half, h: (num(m.row[value]) / vmax) * hs });
       }
+      const name = bandNames(bands);
       out.sheets.push({ x0: f.x0, y0: gy0, x1: f.x1, y1: gy0 + rh * ny, z: 0 });
       out.bounds = [f.x0, gy0, f.x1, gy0 + rh * ny];
       for (let i = 1; i < nx; i++) out.lines.push({ a: [f.x0 + i * cw, gy0, 0], b: [f.x0 + i * cw, gy0 + rh * ny, 0], tone: "rule", w: 1, alpha: 0.7 });
       for (let j = 1; j < ny; j++) out.lines.push({ a: [f.x0, gy0 + j * rh, 0], b: [f.x1, gy0 + j * rh, 0], tone: "rule", w: 1, alpha: 0.7 });
-      if (grid) {
-        bands.forEach((b, j) => out.labels.push({ text: b, at: [f.x0, gy0 + (j + 0.5) * rh, 0], side: "l", cls: "ink" }));
-        parts.forEach((p, i) => out.labels.push({ text: p, at: [f.x0 + (i + 0.5) * cw, gy0 + rh * ny, 0], side: "b", cls: "" }));
-      } else bands.forEach((b, i) => out.labels.push({ text: b, at: [f.x0 + (i + 0.5) * cw, gy0 + rh, 0], side: "b", cls: "ink" }));
+      bands.forEach((b, i) => {
+        if (!name(i)) return;
+        if (across) out.labels.push({ text: name(i)!, at: [f.x0 + (i + 0.5) * cw, gy0 + rh * ny, 0], side: "b", cls: "ink" });
+        else out.labels.push({ text: name(i)!, at: [f.x0, gy0 + (i + 0.5) * rh, 0], side: "l", cls: "ink" });
+      });
+      if (grid) parts.forEach((p, i) => out.labels.push(across
+        ? { text: p, at: [f.x1, gy0 + (i + 0.5) * rh, 0], side: "r", cls: "" }
+        : { text: p, at: [f.x0 + (i + 0.5) * cw, gy0 + rh * ny, 0], side: "b", cls: "" }));
       for (const b of [...out.boxes].sort((p, q) => q.h - p.h).slice(0, 12)) if (b.h > 2) out.labels.push({ text: fmtValue(a, value, b.m.row[value]), at: [b.x, b.y, b.h], side: "t", cls: "ink value" });
       heightAxis(out, a, value, vmax, hs, f.x0, f.x1, gy0);
       out.top = hs;

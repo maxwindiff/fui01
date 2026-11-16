@@ -91,6 +91,7 @@ ${CONVENTION_TEXT}
 RULES
 - Add only the conditions the question asks for. On a follow-up ("which states do they live in?", "by quarter"), keep every condition of the current view, including thresholds the reader changed, unless the question drops it. The examples show the format; their filters belong to their own questions.
 - One view per question. Pick the simplest mark that answers it: bars for totals by category, points over time for events, cells for presence, a network for ties.
+- Fill the channels the question leaves free. When the rows behind the marks carry a category with 2 to 7 values that the question does not fix (client, firm, sector, recipient, kind), show it: stack bars by it with tone, or tone points by it. Pick the one category that says most about the question, and add only that one: no second category on fill or shape, and no text labels on stacked segments. With more values, keep the six largest and group the rest as Other. Leave it out when the question names one value of it or the marks already use it.
 - Table names must not be base table names or SQL keywords (window, order, group, range). A table can read an earlier table of the same answer by name.
 - Give a table a key column when its rows are marks, so the page can follow a mark across edits.
 - For aggregate rows, add list(id) AS source_rows, so the page can split a total into its parts on the next question.
