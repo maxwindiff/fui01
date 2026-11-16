@@ -10,7 +10,7 @@ npm run dev      # http://127.0.0.1:5183
 npm run build    # type-check, then a production build in dist/
 ```
 
-Keys 1 to 6 switch themes, and the theme id also goes in the URL hash, for example `#console`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
+Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for example `#console`. Phosphor is left out of the selector and loads from `#phosphor`. The Ask page draws a view in answer to a question. Open it from the top bar or with `/ask` after the theme id, for example `#vellum/ask`. Each answer is a set of SQL queries and a description of one view, and the queries run in the browser in DuckDB-Wasm. Comparisons in the SQL become controls on the page, and every question and edit goes into a history tree that can branch. Switching between chart and table leaves the history alone. Once a new question is asked, each run of edits under an earlier question is folded into a pill in the tree, except where a branch starts. Clicking a pill shows the edits again until the next question. A script stands in for the agent, so the page answers a fixed set of questions. Its views include bars, swarms, a map, cells, a timeline and a network, and selecting an entity opens its card. The questions used to test the design are in `docs/ask-questions.md`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
 
 ## Rendering
 

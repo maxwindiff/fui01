@@ -31,7 +31,7 @@ function useSection(active: boolean) {
   return section;
 }
 
-export function Crumbs() {
+export function Crumbs({ root }: { root: string }) {
   const ws = useWorkspace();
   const section = useSection(!ws.stage);
   const fig = ws.stage ?? section;
@@ -41,7 +41,7 @@ export function Crumbs() {
     <nav className="crumbs" aria-label="Breadcrumb">
       <ol>
         <li>
-          <button type="button" aria-current={!fig && !ws.trail.length ? "page" : undefined} onClick={ws.home}>Whitcombe case</button>
+          <button type="button" aria-current={!fig && !ws.trail.length ? "page" : undefined} onClick={ws.home}>{root}</button>
         </li>
         {fig ? (
           <li>

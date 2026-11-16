@@ -82,6 +82,10 @@ export const ws = {
     if (!state.stage && !state.trail.length) { scrollTo({ top: 0, behavior: motion.level === 0 ? "auto" : "smooth" }); return; }
     morph(() => set({ stage: null, trail: [] }), () => scrollTo(0, 0));
   },
+  reset() {
+    tip.hide();
+    set({ stage: null, trail: [] });
+  },
   openDoc(id: string) {
     set({ doc: id });
     ws.reveal("12");

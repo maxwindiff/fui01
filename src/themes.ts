@@ -930,8 +930,10 @@ const phosphor: Theme = {
   },
 };
 
-export const THEMES: Theme[] = [vellum, floe, consoleTheme, orrery, massif, phosphor];
-export const themeById = (id: string) => THEMES.find((t) => t.id === id) ?? vellum;
+export const THEMES: Theme[] = [vellum, floe, consoleTheme, orrery, massif];
+// Phosphor stays out of the selector and the number keys but still loads from #phosphor.
+const ALL_THEMES = [...THEMES, phosphor];
+export const themeById = (id: string) => ALL_THEMES.find((t) => t.id === id) ?? vellum;
 
 // Notes on how the page answers the reader. Timings come from the theme.
 const RESPONSES: Record<string, { name: string; what: string; timing: (m: Motion) => string }> = {

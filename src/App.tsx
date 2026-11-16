@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { notesFor, THEMES, themeById } from "./themes";
 import type { Theme } from "./themes";
@@ -17,6 +17,9 @@ import { Inspector } from "./components/Inspector";
 import { TipLayer } from "./tip";
 import { getState, useWs, ws } from "./workspace";
 import { DOCS, FILINGS, fmtMoney, GRAPH, STATE_GIVING, WINDOW_CONTACTS } from "./data";
+
+// The Ask page brings DuckDB with it, so it loads only when opened.
+const Ask = lazy(() => import("./ask/Ask").then((m) => ({ default: m.Ask })));
 
 function Masthead({ theme }: { theme: Theme }) {
   return (
@@ -93,8 +96,37 @@ function Frame({ children }: { children: ReactNode }) {
 const giving = Object.values(STATE_GIVING).reduce((a, v) => a + v, 0);
 const T = PANEL_TITLES;
 
+function CaseBoard({ theme }: { theme: Theme }) {
+  return (
+    <>
+      <Masthead theme={theme} />
+      <Panel fig="01" title={T["01"]} span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
+      <Panel fig="02" title={T["02"]} span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
+      <Panel fig="03" title={T["03"]} span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
+      <Panel fig="04" title={T["04"]} meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
+      <Panel fig="05" title={T["05"]} meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
+      <Panel fig="06" title={T["06"]} meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
+      <Panel fig="07" title={T["07"]} span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
+      <Panel fig="08" title={T["08"]} span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
+      <Panel fig="09" title={T["09"]} span={8} glance="Six offices over 18 months"><Multiples /></Panel>
+      <Panel fig="10" title={T["10"]} span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
+      <Panel fig="11" title={T["11"]} span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
+      <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
+      <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
+      <Panel fig="14" title={T["14"]} glance="Search, filters, actions, readouts"><Controls /></Panel>
+    </>
+  );
+}
+
+type Page = "case" | "ask";
+const fromHash = () => {
+  const [theme, page] = location.hash.slice(1).split("/");
+  return { theme: themeById(theme).id, page: (page === "ask" || page === "labs" ? "ask" : "case") as Page };
+};
+
 export function App() {
-  const [id, setId] = useState(() => themeById(location.hash.slice(1)).id);
+  const [id, setId] = useState(() => fromHash().theme);
+  const [page, setPage] = useState<Page>(() => fromHash().page);
   const theme = themeById(id);
   const notes = useMemo(() => notesFor(theme), [theme]);
 
@@ -108,8 +140,18 @@ export function App() {
     for (const [k, ms] of Object.entries({ enter: m.enter, stagger: m.stagger, hover: m.hover, reveal: m.reveal, layout: m.layout, expand: m.expand, sort: m.sort }))
       root.style.setProperty(k === "stagger" ? "--stagger" : `--dur-${k}`, `${ms}ms`);
     root.style.setProperty("--ease", m.ease);
-    history.replaceState(null, "", `#${theme.id}`);
   }, [theme]);
+
+  useEffect(() => {
+    history.replaceState(null, "", `#${theme.id}${page === "ask" ? "/ask" : ""}`);
+  }, [theme, page]);
+
+  const go = (next: Page) => {
+    if (next === page) return;
+    ws.reset();
+    setPage(next);
+    scrollTo(0, 0);
+  };
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -139,35 +181,15 @@ export function App() {
       </svg>
       <TipLayer notes={notes} />
       <header className="switcher">
-        <div className="themes" role="group" aria-label="Theme">
-          {THEMES.map((t, i) => (
-            <button key={t.id} type="button" className={`theme-btn${t.id === id ? " on" : ""}`} aria-pressed={t.id === id} data-tip={`${t.name}, key ${i + 1}`} onClick={() => setId(t.id)}>
-              <i className="sw" style={{ background: t.vars["--bg"] }}><b style={{ background: t.vars["--ink"] }} /><b style={{ background: t.vars["--money"] }} /></i>
-              {t.name}
-            </button>
-          ))}
-        </div>
-        <Crumbs />
+        <Segmented label="Page" value={page} onChange={go} options={[{ value: "case", label: "Case" }, { value: "ask", label: "Ask", tip: "Views drawn in answer to a question" }]} />
+        <Segmented label="Theme" value={id} onChange={setId} options={THEMES.map((t, i) => ({ value: t.id, label: t.name, tip: `Key ${i + 1}` }))} />
+        <Crumbs root="Whitcombe case" />
         <MotionControl />
         <BriefButton />
       </header>
       <BriefMenu />
-      <Frame key={theme.id}>
-        <Masthead theme={theme} />
-        <Panel fig="01" title={T["01"]} span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
-        <Panel fig="02" title={T["02"]} span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
-        <Panel fig="03" title={T["03"]} span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
-        <Panel fig="04" title={T["04"]} meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
-        <Panel fig="05" title={T["05"]} meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
-        <Panel fig="06" title={T["06"]} meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
-        <Panel fig="07" title={T["07"]} span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
-        <Panel fig="08" title={T["08"]} span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
-        <Panel fig="09" title={T["09"]} span={8} glance="Six offices over 18 months"><Multiples /></Panel>
-        <Panel fig="10" title={T["10"]} span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
-        <Panel fig="11" title={T["11"]} span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
-        <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
-        <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
-        <Panel fig="14" title={T["14"]} glance="Search, filters, actions, readouts"><Controls /></Panel>
+      <Frame key={`${theme.id}/${page}`}>
+        {page === "ask" ? <Suspense fallback={null}><Ask /></Suspense> : <CaseBoard theme={theme} />}
       </Frame>
       <Inspector />
     </>
