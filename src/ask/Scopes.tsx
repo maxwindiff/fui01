@@ -53,25 +53,32 @@ function Find() {
 const drag = (s: Scope) => (e: DragEvent) => { e.dataTransfer.setData(SCOPE_MIME, JSON.stringify(s)); e.dataTransfer.setData("text/plain", s.kind === "set" ? s.label : ""); e.dataTransfer.effectAllowed = "copy"; };
 const count = (n: number) => `${n} ${n === 1 ? "record" : "records"}`;
 
+const MODES: { value: LensMode; label: string; tip: string }[] = [
+  { value: "dim", label: "Dim", tip: "Fade everything else" },
+  { value: "hide", label: "Hide", tip: "Hide everything else" },
+];
 function SelChip() {
   const sel = useBoard((s) => s.sel);
+  const findMode = useBoard((s) => s.findMode);
   const scope: Scope = { kind: "set", label: sel.label, set: { ids: sel.ids } };
   return (
     <span className="scope-chip sel" draggable onDragStart={drag(scope)}>
       <i className="ans-sw sel" />
       <button type="button" className="scope-name" data-tip="Add to the question" onClick={() => board.insert([scope])}>{sel.label}</button>
       <span className="scope-n num">{count(sel.ids.length)}</span>
+      {sel.from === "find" ? (
+        <div className="seg" role="group" aria-label={`How ${sel.label} shows`}>
+          {MODES.map((o) => (
+            <button key={o.value} type="button" aria-pressed={findMode === o.value} className={findMode === o.value ? "on" : ""} data-tip={o.tip} onClick={() => board.setFindMode(findMode === o.value ? null : o.value)}>{o.label}</button>
+          ))}
+        </div>
+      ) : null}
       <button type="button" className="btn quiet" data-tip="Keep as a lens" onClick={() => board.keepSelection()}>Keep</button>
       <button type="button" className="ask-x" aria-label="Clear the selection" data-tip="Clear (Esc)" onClick={() => board.clearSelection()}><X /></button>
     </span>
   );
 }
 
-const MODES: { value: LensMode; label: string; tip: string }[] = [
-  { value: "mark", label: "Mark", tip: "Outline matching records" },
-  { value: "dim", label: "Dim", tip: "Fade everything else" },
-  { value: "hide", label: "Hide", tip: "Hide everything else" },
-];
 function LensChip({ l, i }: { l: Lens; i: number }) {
   const [naming, setNaming] = useState(false);
   // A double click renames the lens, so a single click waits to see whether a second one follows.

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
 import { motion } from "../motion";
 import type { Camera } from "../gpu/scene";
-import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/network";
+import { buildCoreModel, buildNetBuffers, pick } from "../gpu/network";
 import type { Emph, NetModel } from "../gpu/network";
 import { rgba } from "../themes";
 import type { RGBA, Theme } from "../themes";
@@ -12,7 +12,6 @@ import { board, useBoard } from "../ask/board";
 import { cssColor, emphasis, useLinks } from "../links";
 import { useWs, ws } from "../workspace";
 
-type Density = "case" | "5k" | "100k";
 interface Readout { id?: string; name: string; role?: string; ties: number }
 interface Stats { n: number; m: number; segs: number }
 interface Pose { cam: Camera; lift: number }
@@ -140,7 +139,7 @@ class NetController {
       yaw: deep ? this.deep!.yaw : 0, pitch: deep ? this.deep!.pitch : TOP_DOWN, scale: 1, fov: s.cam.fov,
     };
     const w = s.width || 800, h = s.height || 600;
-    const fill = m.dense && !m.sheets.length ? 0.94 : deep ? 0.84 : 0.86;
+    const fill = deep ? 0.84 : 0.86;
     // A ring layout is fitted to its outer circle, which is tighter than the bounding square once the view is turned.
     const hull: [number, number][] = ringR
       ? Array.from({ length: 24 }, (_, i) => [Math.cos((i / 24) * Math.PI * 2) * ringR, Math.sin((i / 24) * Math.PI * 2) * ringR])
@@ -158,7 +157,7 @@ class NetController {
       const [sx0, sx1, sy0, sy1] = extent();
       s.cam.scale *= Math.min((w * fill) / (sx1 - sx0), (h * fill) / (sy1 - sy0));
       const [cx0, cx1, cy0, cy1] = extent();
-      const dx = w / 2 + (m.dense ? 0 : 24) - (cx0 + cx1) / 2, dy = h / 2 - (cy0 + cy1) / 2;
+      const dx = w / 2 + 24 - (cx0 + cx1) / 2, dy = h / 2 - (cy0 + cy1) / 2;
       if (s.cam.pitch < 1.2) {
         s.pan(dx, 0);
         s.cam.tz += dy / (s.cam.scale * Math.cos(s.cam.pitch));
@@ -236,7 +235,7 @@ class NetController {
   };
 
   private rebuild() {
-    const b = buildNetBuffers(this.model, this.theme, this.selected, this.model.dense ? null : this.emph);
+    const b = buildNetBuffers(this.model, this.theme, this.selected, this.emph);
     this.scene.setLayer("quads", b.quads.data, b.quads.count);
     this.scene.setLayer("surface", b.surface, b.surfaceCount);
     this.scene.setLayer("base", b.base.data, b.base.count);
@@ -385,7 +384,7 @@ class NetController {
     this.lk = lk;
     this.applyLinks();
     const m = this.model;
-    if (!root || m.dense) {
+    if (!root) {
       if (this.emph) { this.emph = null; this.emphKey = ""; this.rebuild(); }
       return;
     }
@@ -449,7 +448,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
   const { staged } = usePanel();
   const inspected = useWs((s) => s.trail[s.trail.length - 1]);
   const replays = useWs((s) => s.replays);
-  const [density, setDensity] = useState<Density>("case");
   const [space, setSpace] = useState<"flat" | "deep">("deep");
   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
   const [readout, setReadout] = useState<Readout | null>(null);
@@ -481,7 +479,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
   useEffect(() => {
     ctl.current?.measure();
     ctl.current?.layout();
-  }, [readout, space, density, staged]);
+  }, [readout, space, staged]);
 
   useEffect(() => {
     if (replays) ctl.current?.scene.playReveal(theme.motion.reveal);
@@ -504,17 +502,13 @@ export function NetworkView({ theme }: { theme: Theme }) {
   // The network's own selection already lights the selected entity and its ties.
   useEffect(() => { ctl.current?.setLinks((id) => links.mark([id]), (links.root ?? "").split(" ").filter((f) => f !== "sel" || selFrom !== "01").join(" ")); }, [links, status, selFrom]);
 
-  const change = (d: Density) => {
-    setDensity(d);
-    ctl.current?.setModel(d === "case" ? buildCoreModel(theme.gpu) : buildStressModel(d === "5k" ? 5000 : 100000, theme.gpu), 700);
-  };
   const changeSpace = (v: "flat" | "deep") => {
     setSpace(v);
     ctl.current?.setDeep(v === "deep");
   };
 
   return (
-    <div className="viz net" data-dense={density !== "case"}>
+    <div className="viz net">
       <canvas ref={canvas} aria-label="Relationship network" />
       <div className="viz-labels" ref={labels} data-lk={links.root} />
       <div className="net-hover" ref={hover} hidden>
@@ -532,7 +526,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
       </ul>
       <div className="viz-tr" data-keepout>
         {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan", note: "morph rest" }]} /> : null}
-        <Segmented label="Graph size" value={density} onChange={change} options={[{ value: "case", label: "Case file" }, { value: "5k", label: "5,000" }, { value: "100k", label: "100,000" }]} />
         <div className="viz-zoom">
           <button type="button" aria-label="Zoom in" data-tip="Zoom in (Ctrl-scroll)" onClick={() => ctl.current?.zoom(1.35)}>+</button>
           <button type="button" aria-label="Zoom out" onClick={() => ctl.current?.zoom(1 / 1.35)}>&minus;</button>

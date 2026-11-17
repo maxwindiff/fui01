@@ -1,6 +1,7 @@
 import { MENTIONS, TABLES } from "../tables";
 import { entityIn, entityNamed } from "./entities";
 import type { MarkT } from "./render";
+import { FIND } from "./board";
 import type { Lens, LensMode } from "./board";
 
 // Every base row with an id is a record, and every view on the board draws records. For each record the page keeps
@@ -83,7 +84,8 @@ export function matching(marks: MarkRecords[], ids: Set<string>): Set<string> {
 export interface Prepared { set: Set<string>; wide: Set<string> }
 export const prepare = (ids: string[]): Prepared => ({ set: new Set(ids), wide: new Set([...ids, ...entitiesOf(ids)]) });
 export interface OnLens extends Prepared { i: number; mode: LensMode }
-export const onLenses = (lenses: Lens[]): OnLens[] => lenses.flatMap((l, i) => (l.on ? [{ i, mode: l.mode, ...prepare(l.set.ids) }] : []));
+// The search gets no lens color, since its records are already the selection.
+export const onLenses = (lenses: Lens[]): OnLens[] => lenses.flatMap((l, i) => (l.on ? [{ i: l.id === FIND ? -1 : i, mode: l.mode, ...prepare(l.set.ids) }] : []));
 
 // Dimming and hiding narrow the view: a record stays lit or shown only when it matches every lens that dims or
 // hides. Records that stand for nothing in the tables, such as a row of totals without its source rows, stay.

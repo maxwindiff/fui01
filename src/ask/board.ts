@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { Answer } from "./spec";
 
 // The answers beside the case board, the scopes the reader works with, and what the reader is pointing at. Pinned
@@ -48,7 +48,7 @@ export interface Card {
   text?: TextBody;
 }
 // mark outlines the records in the set, dim fades everything else, and hide removes everything else.
-export type LensMode = "mark" | "dim" | "hide";
+export type LensMode = "dim" | "hide";
 export interface Lens { id: string; name: string; set: SetDef; mode: LensMode; on: boolean }
 export interface Selection { ids: string[]; label: string; from: string | null }
 export interface Busy { question: string; status: string; at: string | null; near?: string; kind: "edit" | "view" | "text" | "lens" | "stack" }
@@ -62,6 +62,8 @@ export interface BoardState {
   cards: Card[];
   lenses: Lens[];
   sel: Selection;
+  // Whether the records found by the search dim or hide the rest, as a lens would.
+  findMode: LensMode | null;
   focus: string | null;
   // The panels and answers named in the question being written.
   ctx: string[];
@@ -78,14 +80,14 @@ function restore(): Pick<BoardState, "cards" | "lenses" | "layout"> {
   try { const l = localStorage.getItem(LAYOUT_KEY); if (l === "column" || l === "below") layout = l; } catch { /* the default */ }
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    // Lenses saved before the hide mode existed called dimming "only".
-    if (s && Array.isArray(s.cards)) return { cards: s.cards, lenses: (s.lenses ?? []).map((l: Omit<Lens, "mode"> & { mode: string }) => ({ ...l, mode: l.mode === "only" ? "dim" : l.mode })), layout };
+    // Older lenses could only mark their records, or called dimming "only".
+    if (s && Array.isArray(s.cards)) return { cards: s.cards, lenses: (s.lenses ?? []).map((l: Omit<Lens, "mode"> & { mode: string }) => ({ ...l, mode: l.mode === "hide" ? "hide" : "dim" })), layout };
   } catch { /* nothing was saved */ }
   return { cards: [], lenses: [], layout };
 }
 
 const NONE: Selection = { ids: [], label: "", from: null };
-let state: BoardState = { ...restore(), sel: NONE, focus: null, ctx: [], hover: null, busy: null, note: "" };
+let state: BoardState = { ...restore(), sel: NONE, findMode: null, focus: null, ctx: [], hover: null, busy: null, note: "" };
 const subs = new Set<() => void>();
 let saved = "";
 function set(patch: Partial<BoardState>) {
@@ -99,6 +101,15 @@ function set(patch: Partial<BoardState>) {
 export const getBoard = () => state;
 export function useBoard<T>(pick: (s: BoardState) => T): T {
   return useSyncExternalStore((f) => { subs.add(f); return () => { subs.delete(f); }; }, () => pick(state));
+}
+
+// The lenses that are drawn, with the records found by the search when they dim or hide the rest.
+export const FIND = "find";
+export function useLenses(): Lens[] {
+  const lenses = useBoard((s) => s.lenses);
+  const sel = useBoard((s) => s.sel);
+  const mode = useBoard((s) => s.findMode);
+  return useMemo(() => (sel.from === FIND && mode && sel.ids.length ? [...lenses, { id: FIND, name: sel.label, set: { ids: sel.ids }, mode, on: true }] : lenses), [lenses, sel, mode]);
 }
 
 export const answerOf = (c: Card | undefined | null) => (c?.revs ? c.revs[c.rev ?? c.revs.length - 1].answer : null);
@@ -118,6 +129,7 @@ export const board = {
   focus(id: string | null) { if (state.focus !== id) set({ focus: id }); },
   select(sel: Selection) { set({ sel }); },
   clearSelection() { if (state.sel.ids.length) set({ sel: NONE }); },
+  setFindMode(findMode: LensMode | null) { set({ findMode }); },
   hover(h: Hover | null) { if (h || state.hover) set({ hover: h }); },
   busy(b: Busy | null) { set({ busy: b }); },
   note(note: string) { set({ note }); },
@@ -167,7 +179,7 @@ export const board = {
     const cards = state.cards.filter((c) => c.id !== id).map((c) => (c.from === id ? { ...c, from: gone?.from ?? null, near: gone?.near, y: gone?.y } : c));
     set({ cards, focus: state.focus === id ? null : state.focus, sel: state.sel.from === id ? NONE : state.sel });
   },
-  addLens(name: string, s: SetDef, mode: LensMode = "mark") {
+  addLens(name: string, s: SetDef, mode: LensMode = "dim") {
     const lens: Lens = { id: newId(), name, set: s, mode, on: true };
     set({ lenses: [...state.lenses.slice(-3), lens] });
     return lens.id;
@@ -175,7 +187,7 @@ export const board = {
   // The selection becomes a lens, and stops being the selection.
   keepSelection() {
     if (!state.sel.ids.length) return;
-    const lens: Lens = { id: newId(), name: state.sel.label, set: { ids: state.sel.ids }, mode: "mark", on: true };
+    const lens: Lens = { id: newId(), name: state.sel.label, set: { ids: state.sel.ids }, mode: (state.sel.from === "find" && state.findMode) || "dim", on: true };
     set({ lenses: [...state.lenses.slice(-3), lens], sel: NONE });
   },
   updateLens(id: string, patch: Partial<Lens>) { set({ lenses: state.lenses.map((l) => (l.id === id ? { ...l, ...patch } : l)) }); },

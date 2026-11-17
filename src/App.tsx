@@ -69,10 +69,9 @@ function DocGlance() {
 // The case panels on the left, and answers to questions about them on the right.
 function Frame({ children, aside }: { children: ReactNode; aside: ReactNode }) {
   const stage = useWs((s) => s.stage);
-  const inspecting = useWs((s) => s.trail.length > 0);
   const layout = useBoard((s) => s.layout);
   return (
-    <div className="shell" data-inspect={inspecting ? "" : undefined}>
+    <div className="shell">
       <div className="case" data-layout={layout}>
         <Scopes />
         <main className="board" data-stage={stage ?? undefined}>{children}</main>

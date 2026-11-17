@@ -14,7 +14,7 @@ Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for examp
 
 The page has a toolbar, the case panels on the left, and answers to questions about them on the right. Both columns are drawn from the case tables in `src/tables.ts`. `src/data.ts` works out what each case panel shows, and `src/ask/sources.ts` writes the same data as SQL over the tables, one set of queries per panel. A question asked about a panel gets the panel's rows as context, and the table button on a panel opens its data as an answer.
 
-Selecting a mark anywhere marks the same records, and the entities they involve, in every panel and answer. The toolbar shows the selection beside a search field, which selects the records whose text matches. Keep turns the selection into a lens, a named set of records that stays on the page. A lens marks its records, dims everything else, or hides everything else. Hiding takes the other rows out of answers before they are laid out, so their axes fit what is left.
+Selecting a mark anywhere marks the same records, and the entities they involve, in every panel and answer. The toolbar shows the selection beside a search field, which selects the records whose text matches. Keep turns the selection into a lens, a named set of records that stays on the page. A lens either dims or hides every other record, and the records found by a search can do the same before they are kept. Hiding takes the other rows out of answers before they are laid out, so their axes fit what is left.
 
 A question is text with scopes in it. A scope is a panel, an answer, the selection or a lens. The ask button on a panel or an answer puts it in the question box, and so do a click on a chip in the toolbar, dragging the chip, the + button, and typing @ (`/` focuses the box). The question is about the first panel or answer it names, or about the whole case when it names none.
 
@@ -36,7 +36,7 @@ Each kind of content is drawn with the lightest technology that can carry its ma
 
 - **DOM** draws text, tables, documents and controls.
 - **SVG** draws the charts, which have up to a few thousand marks.
-- **WebGPU**, through [vgpu](https://vgpu.sh), draws the network and the map, where mark counts go into the hundreds of thousands.
+- **WebGPU**, through [vgpu](https://vgpu.sh), draws the network and the map, which need lighting, depth and camera moves that SVG cannot do at speed.
 
 A theme is an object in `src/themes.ts`. When the theme changes, `App.tsx` copies its `vars` onto the root element as CSS custom properties and sets `data-family` to the theme id. The DOM and the SVG charts read colours, type and stroke weights from those properties, and `src/styles/base.css` has a block of rules per family for everything the properties cannot express.
 

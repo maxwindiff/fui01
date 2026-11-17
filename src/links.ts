@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { board, useBoard } from "./ask/board";
+import { board, useBoard, useLenses } from "./ask/board";
 import { hits, onLenses, passes, prepare } from "./ask/records";
 import type { RGBA } from "./themes";
 
@@ -10,15 +10,15 @@ import type { RGBA } from "./themes";
 
 export function useLinks(fig: string) {
   const sel = useBoard((s) => s.sel);
-  const lenses = useBoard((s) => s.lenses);
+  const lenses = useLenses();
   const hover = useBoard((s) => s.hover);
   return useMemo(() => {
     const S = sel.ids.length ? prepare(sel.ids) : null;
     const R = hover?.from === "ref" ? prepare(hover.ids) : null;
     const M = hover?.from === "mark" && hover.at !== fig ? prepare(hover.ids) : null;
     const L = onLenses(lenses);
-    const outline = L.filter((l) => l.mode !== "hide");
-    const root = [S && "sel", R && "ref", outline.length && "ln", L.some((l) => l.mode !== "mark") && "keep", L.some((l) => l.mode === "hide") && "hide"].filter(Boolean).join(" ") || undefined;
+    const outline = L.filter((l) => l.mode !== "hide" && l.i >= 0);
+    const root = [S && "sel", R && "ref", outline.length && "ln", L.length > 0 && "keep", L.some((l) => l.mode === "hide") && "hide"].filter(Boolean).join(" ") || undefined;
     const mark = (own: string[]) => {
       const out = ["lk"];
       if (S && hits(own, S.set, S.wide)) out.push("lk-sel");

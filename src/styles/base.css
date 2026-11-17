@@ -564,7 +564,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 .ans-acts { display: flex; align-items: center; gap: 6px; flex: none; }
 .ans-acts .btn { padding: 2px 10px; font-size: 12.5px; }
 .ans-acts .panel-ask { margin: 0; }
-.ans-revs { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-3); font-size: 12px; }
+.ans-revs { display: inline-flex; align-items: center; gap: 2px; align-self: center; margin: -4px 0; color: var(--ink-3); font-size: 12px; }
 .ans-revs button { width: 20px; height: 22px; padding: 0; border: 0; background: none; color: var(--ink-2); font: 16px/1 var(--font-ui); cursor: pointer; }
 .ans-revs button:disabled { opacity: 0.35; cursor: default; }
 .ans-revs button:not(:disabled):hover { color: var(--accent-text); }
@@ -1133,7 +1133,6 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
 .readout .btn { display: inline-flex; width: fit-content; margin-top: 8px; padding: 3px 10px; }
 
 /* ------------------------------------------------- Stage, rail and drawer */
-.shell[data-inspect] { padding-right: var(--inspector-w); }
 .board[data-stage] {
   grid-template-columns: minmax(0, 1fr) 288px;
   grid-template-rows: repeat(13, auto) minmax(0, 1fr);
@@ -1160,10 +1159,11 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
 @keyframes rim { from { border-color: rgba(240, 190, 100, 0.95); box-shadow: 0 0 70px -18px rgba(255, 139, 31, 0.6); } }
 
 .inspector {
-  position: fixed; z-index: 15; top: var(--bar-h); right: 0; bottom: 0; width: var(--inspector-w);
+  position: fixed; z-index: 17; top: var(--bar-h); right: 0; bottom: 0; width: var(--inspector-w);
   display: flex; flex-direction: column;
   background: var(--surface-solid);
   border-left: var(--rule-w) solid var(--rule-strong);
+  box-shadow: -24px 0 50px -30px rgba(0, 0, 0, 0.6);
   view-transition-name: inspector;
 }
 .insp-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 14px 8px 18px; border-bottom: var(--rule-w) solid var(--rule); }
@@ -1191,8 +1191,7 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
 @keyframes slide-out { to { transform: translateX(100%); } }
 
 @media (max-width: 1100px) {
-  .shell[data-inspect] { padding-right: 0; }
-  .inspector { width: min(var(--inspector-w), 100vw); box-shadow: -24px 0 50px -30px rgba(0, 0, 0, 0.6); }
+  .inspector { width: min(var(--inspector-w), 100vw); }
   .board[data-stage] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
   .board[data-stage] > .panel.tile { display: none; }
   .gt-detail { grid-template-columns: 1fr; gap: 16px; }

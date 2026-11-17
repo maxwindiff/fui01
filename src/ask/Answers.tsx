@@ -32,7 +32,7 @@ import type { Loaded } from "./run";
 import { isScope, partsText, scopeIds, scopeLabel } from "./scope";
 import { sourceFor } from "./sources";
 import type { Answer } from "./spec";
-import { answerOf, board, getBoard, useBoard } from "./board";
+import { answerOf, board, FIND, getBoard, useBoard, useLenses } from "./board";
 import type { Busy, Card, Layout, Part, Ref } from "./board";
 
 const PAINT_TONES = [["ink", "--ink-2"], ["accent", "--accent"], ["t1", "--t1"], ["t2", "--t2"], ["t3", "--t3"], ["t4", "--t4"], ["t5", "--t5"], ["t6", "--t6"]] as const;
@@ -131,7 +131,7 @@ function hideRows(a: Answer, data: Loaded, L: OnLens[]): Loaded {
   return { ...data, results };
 }
 function useHidden(answers: Answer[], data: Loaded[] | null) {
-  const lenses = useBoard((s) => s.lenses);
+  const lenses = useLenses();
   return useMemo(() => {
     if (!data) return null;
     const L = onLenses(lenses);
@@ -156,7 +156,7 @@ function SceneView({ card, a, data, sc, look, deep, onLeft, onSort }: { card: Ca
   const links = useRef<SVGGElement>(null);
   const engine = useRef<Engine | null>(null);
   const sel = useBoard((s) => s.sel);
-  const lenses = useBoard((s) => s.lenses);
+  const lenses = useLenses();
   const hover = useBoard((s) => s.hover);
   const recs = useMemo(() => sc.marks.map((m) => markRecords(m, a.layers[m.layer].from ? a.tables[a.layers[m.layer].from!]?.key : undefined)), [sc, a]);
 
@@ -173,11 +173,13 @@ function SceneView({ card, a, data, sc, look, deep, onLeft, onSort }: { card: Ca
     let keep: Set<string> | null = null;
     lenses.forEach((l, i) => {
       const hit = l.on && l.mode !== "hide" ? matching(recs, new Set(l.set.ids)) : new Set<string>();
-      e.light(hit, `ln${i}`);
-      for (const id of hit) all.add(id);
+      if (l.id !== FIND) {
+        e.light(hit, `ln${i}`);
+        for (const id of hit) all.add(id);
+      }
       if (l.on && l.mode === "dim") keep = keep ? new Set([...keep].filter((x) => hit.has(x))) : hit;
     });
-    e.light(all.size || lenses.some((l) => l.on && l.mode !== "hide") ? all : new Set(), "ln");
+    e.light(all.size || lenses.some((l) => l.on && l.mode !== "hide" && l.id !== FIND) ? all : new Set(), "ln");
     e.light(keep ? ((keep as Set<string>).size ? keep : new Set(["-"])) : new Set(), "keep");
     e.light(hover?.from === "ref" ? matching(recs, new Set(hover.ids)) : new Set(), "ref");
     e.light(hover?.from === "mark" && hover.at !== card.id ? matching(recs, new Set(hover.ids)) : new Set(), "lit");
@@ -427,19 +429,18 @@ function CardView({ card, look, slot }: { card: Card; look: Look; slot: Slot }) 
         </button>
         <h3 className="ans-title" onClick={() => { if (!open) board.open(card.id, true); }}>{card.title}</h3>
         <span className="ans-acts">
-          {revs.length > 1 && open ? (
-            <span className="ans-revs">
-              <button type="button" disabled={rev === 0} aria-label="Earlier version" data-tip={revs[rev - 1]?.label} onClick={() => board.step(card.id, -1)}>‹</button>
-              <span className="num">{rev + 1}/{revs.length}</span>
-              <button type="button" disabled={rev === revs.length - 1} aria-label="Later version" data-tip={revs[rev + 1]?.label} onClick={() => board.step(card.id, 1)}>›</button>
-            </span>
-          ) : null}
           <button type="button" className="panel-ask" aria-label={`Ask about ${card.title}`} data-tip="Ask about this" onClick={(e) => { e.stopPropagation(); board.insert([{ kind: "card", id: card.id }]); }}><AskIcon /></button>
           {card.pinned ? null : <button type="button" className="btn" onClick={() => board.pin(card.id)}>Pin</button>}
           <button type="button" className="ans-x" aria-label={`Remove ${card.title}`} data-tip="Remove" onClick={() => board.remove(card.id)}><X /></button>
         </span>
       </header>
-      <p className="ans-q"><Question card={card} />{from && !card.parts?.some((p) => typeof p !== "string" && p.kind !== "set" && p.id === card.from) ? <button type="button" className="ans-from" onClick={() => reveal(card.from!)}>on {from}</button> : null}{busy ? <Status text={busy.status} /> : null}</p>
+      <p className="ans-q"><Question card={card} />{revs.length > 1 && open ? (
+        <span className="ans-revs">
+          <button type="button" disabled={rev === 0} aria-label="Earlier version" data-tip={revs[rev - 1]?.label} onClick={() => board.step(card.id, -1)}>‹</button>
+          <span className="num">{rev + 1}/{revs.length}</span>
+          <button type="button" disabled={rev === revs.length - 1} aria-label="Later version" data-tip={revs[rev + 1]?.label} onClick={() => board.step(card.id, 1)}>›</button>
+        </span>
+      ) : null}{from && !card.parts?.some((p) => typeof p !== "string" && p.kind !== "set" && p.id === card.from) ? <button type="button" className="ans-from" onClick={() => reveal(card.from!)}>on {from}</button> : null}{busy ? <Status text={busy.status} /> : null}</p>
       <div className="fold ans-fold" data-open={open}>
         <div inert={!open}>
           {card.kind === "chart" ? <ChartBody card={card} look={look} /> : card.kind === "stack" ? <StackBody card={card} look={look} /> : <TextBody card={card} ready={look.ready} />}

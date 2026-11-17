@@ -59,7 +59,6 @@ export interface NetModel {
   // Pitch of the lattice the entities stand on, where the arrangement is a board of keys.
   keys?: number;
   half: number;
-  dense: boolean;
   adjStart: Uint32Array;
   adj: Uint32Array;
   grid: { cell: number; cols: number; start: Uint32Array; items: Uint32Array };
@@ -110,8 +109,8 @@ function finish(d: Draft, g: GpuStyle): NetModel {
     const cell = Math.max(7, span / 110);
     terrain = makeField(x0 - pad, y0 - pad, x1 + pad, y1 + pad, cell);
     for (let i = 0; i < n; i++) splat(terrain, x[i], y[i], d.weight ? d.weight[i] : d.radius[i] > 4 ? 5 : 0.5);
-    blur(terrain, Math.max(2, Math.round((d.dense ? span / 30 : 52) / cell)));
-    scaleTo(terrain, d.dense ? span * 0.11 : Math.min(170, span * 0.2));
+    blur(terrain, Math.max(2, Math.round(52 / cell)));
+    scaleTo(terrain, Math.min(170, span * 0.2));
   }
   const count = [0, 0, 0];
   for (let i = 0; i < n; i++) {
@@ -266,61 +265,7 @@ export function buildCoreModel(g: GpuStyle): NetModel {
     names: entities.map((e) => (e.name === e.id ? undefined : e.name)),
     roles: entities.map((e) => e.role),
     labels: entities.flatMap((e, i) => (e.label ? [i] : [])),
-    focus, rings, keys, half: half + 30, dense: false,
-  }, g);
-}
-
-export function buildStressModel(n: number, g: GpuStyle): NetModel {
-  const rand = mulberry32(n);
-  const gauss = () => (rand() + rand() + rand() + rand() + rand() + rand() - 3) * 0.82;
-  const clusters = Math.max(6, Math.round(Math.sqrt(n) / 3.2));
-  const half = Math.sqrt(n) * 7.4;
-  const sizes = Array.from({ length: clusters }, (_, c) => 1 / Math.pow(c + 2, 0.72));
-  const total = sizes.reduce((a, b) => a + b, 0);
-  const x = new Float32Array(n), y = new Float32Array(n), radius = new Float32Array(n);
-  const shape = new Uint8Array(n), sector = new Uint8Array(n), hollow = new Uint8Array(n);
-  const cstart: number[] = [0];
-  let i = 0;
-  for (let c = 0; c < clusters; c++) {
-    const count = c === clusters - 1 ? n - i : Math.min(n - i, Math.round((sizes[c] / total) * n));
-    const a = c * 2.39996;
-    const rr = half * 0.84 * Math.sqrt((c + 0.6) / clusters);
-    const cx = Math.cos(a) * rr, cy = Math.sin(a) * rr;
-    const sigma = Math.sqrt(count) * 2.5;
-    const major = Math.floor(rand() * 3);
-    const squash = 0.55 + rand() * 0.45, tilt = rand() * Math.PI;
-    for (let k = 0; k < count; k++, i++) {
-      const gx = gauss() * sigma, gy = gauss() * sigma * squash;
-      x[i] = cx + gx * Math.cos(tilt) - gy * Math.sin(tilt);
-      y[i] = cy + gx * Math.sin(tilt) + gy * Math.cos(tilt);
-      const hub = rand() < 0.012;
-      radius[i] = hub ? 5 + rand() * 4 : 1.5 + rand() * 1.6;
-      const s = rand() < 0.78 ? major : Math.floor(rand() * 4);
-      sector[i] = s;
-      shape[i] = s === 3 ? SHAPE.asterisk : [SHAPE.circle, SHAPE.circle, SHAPE.square, SHAPE.diamond, SHAPE.triangle, SHAPE.hexagon][Math.floor(rand() * 6)];
-      hollow[i] = s === 0 && hub ? 1 : 0;
-    }
-    cstart.push(i);
-  }
-  const m = n * 3;
-  const es = new Uint32Array(m), et = new Uint32Array(m), etype = new Uint8Array(m), ew = new Float32Array(m);
-  let e = 0;
-  for (let c = 0; c < clusters; c++) {
-    const a = cstart[c], b = cstart[c + 1];
-    for (let s = a; s < b; s++) {
-      for (let k = 0; k < 3; k++, e++) {
-        es[e] = s;
-        const far = rand() < 0.035;
-        et[e] = far ? Math.floor(rand() * n) : a + Math.floor(rand() * (b - a));
-        const r = rand();
-        etype[e] = r < 0.07 ? EDGE.money : r < 0.16 ? EDGE.contact : EDGE.plain;
-        ew[e] = 1 + rand() * 4;
-      }
-    }
-  }
-  return finish({
-    n, m, x, y, radius, shape, sector, hollow, es, et, etype, ew,
-    ids: [], names: [], roles: [], labels: [], focus: -1, rings: [], half: half * 1.12, dense: true,
+    focus, rings, keys, half: half + 30,
   }, g);
 }
 
@@ -381,8 +326,6 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
   const clockwork = theme.family === "orrery";
   const { n, m, x, y, z, es, et, etype, ew } = model;
   const colors: RGBA[] = g.sectors ? g.sectors.map((c) => rgba(c)) : SECTORS.map((s) => rgba(theme.vars[`--${s}`]));
-  const density = model.dense ? Math.max(0.1, Math.min(1, Math.sqrt(1400 / m))) : 1;
-  const widthScale = model.dense ? 0.8 : 1;
   // Ties run along the ground between blocks, and from mark to mark everywhere else.
   const grounded = form === "blocks";
   const P = (i: number): [number, number, number] => [x[i], y[i], grounded ? 0 : z[i]];
@@ -399,9 +342,9 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
 
   const quads = new QuadWriter();
   const shadows = new QuadWriter();
-  const boxes = new BoxWriter(model.dense ? 1024 : n);
-  const base = new SegWriter(model.dense ? m : m * 26 + 4096);
-  const flows = new SegWriter(model.dense ? Math.ceil(m * 0.1) : 4096);
+  const boxes = new BoxWriter(n);
+  const base = new SegWriter(m * 26 + 4096);
+  const flows = new SegWriter(4096);
   const guide = rgba(g.guide.color, g.guide.alpha);
   const faint = rgba(g.guide.color, g.guide.alpha * 0.55);
   const bg = rgba(g.vizBg);
@@ -410,10 +353,10 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
 
   if (form === "strata") {
     const [x0, y0, x1, y1] = model.bounds;
-    const pad = model.dense ? 40 : 46;
+    const pad = 46;
     const film = rgba("#F6F9F3", 0.6);
     const ink = rgba(g.guide.color, 1);
-    [...model.sheets].reverse().forEach((s, k) => quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, s.z, film, ink, model.dense ? 0 : 26, 0.22, 0.8, 1, k * 0.12));
+    [...model.sheets].reverse().forEach((s, k) => quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, s.z, film, ink, 26, 0.22, 0.8, 1, k * 0.12));
     for (const [cx, cy] of [[x0 - pad, y0 - pad], [x1 + pad, y0 - pad], [x0 - pad, y1 + pad], [x1 + pad, y1 + pad]])
       base.line([cx, cy, -STRATA_GAP], [cx, cy, STRATA_GAP], { color: rgba(g.guide.color, 0.3), width: 0.8, dash: 4, delay: 0.3 });
   }
@@ -421,8 +364,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
   const keys = model.keys ? g.block!.keys! : undefined;
   if (form === "blocks" && !keys) {
     const [x0, y0, x1, y1] = model.bounds;
-    const pad = model.dense ? 40 : 46;
-    quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, 0, [bg[0], bg[1], bg[2], 0], rgba(g.guide.color, 1), model.dense ? 0 : 24, g.guide.alpha, g.guide.alpha * 1.6, 1, 0);
+    const pad = 46;
+    quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, 0, [bg[0], bg[1], bg[2], 0], rgba(g.guide.color, 1), 24, g.guide.alpha, g.guide.alpha * 1.6, 1, 0);
     const corner = rgba(g.guide.color, Math.min(1, g.guide.alpha * 3));
     for (const [cx, cy, sx, sy] of [[x0 - pad, y0 - pad, 1, 1], [x1 + pad, y0 - pad, -1, 1], [x0 - pad, y1 + pad, 1, -1], [x1 + pad, y1 + pad, -1, -1]]) {
       base.line([cx - 14 * sx, cy, 0], [cx + 22 * sx, cy, 0], { color: corner, width: 1.4, delay: 0.1 });
@@ -452,7 +395,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
       base.line([Math.cos(a) * (R + 8), Math.sin(a) * (R + 8), 0], [Math.cos(a) * (R + 8 + len), Math.sin(a) * (R + 8 + len), 0],
         { color: t % 6 === 0 ? guide : faint, width: 0.9, spin: -Math.PI / 150, delay: 0.7 + (t / 72) * 0.25 });
     }
-    const meridians = model.dense ? 8 : 12;
+    const meridians = 12;
     for (let k = 0; k < meridians; k++) {
       const a = (k / meridians) * Math.PI * 2;
       base.path((t) => [Math.cos(a) * t * R, Math.sin(a) * t * R, dome(t * R)], 30, { color: faint, width: 0.8, spin: Math.PI / 75, delay: 0.2 + t01(k, meridians) * 0.3 });
@@ -503,18 +446,18 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
 
   const stemmed = form === "armillary" || form === "relief";
   if (stemmed) {
-    const stem = rgba(g.guide.color, model.dense ? 0.16 : form === "relief" ? 0.7 : 0.5);
+    const stem = rgba(g.guide.color, form === "relief" ? 0.7 : 0.5);
     for (let i = 0; i < n; i++) {
-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
+      if (!fa(i)) continue;
       base.line([x[i], y[i], model.zBase[i]], [x[i], y[i], z[i]], { color: dim(stem, (lit(i) ? 1 : 0.25) * fa(i)), width: 0.8, delay: model.delay[i] });
     }
   }
 
-  const edgeC = rgba(g.edge.color, g.edge.alpha * density * (model.dense && g.additiveBase ? 0.5 : 1));
-  const contactC = rgba(g.contact.color, g.contact.alpha * Math.min(1, density * 1.6));
-  const moneyC = rgba(g.money.color, g.money.alpha * (model.dense ? Math.min(1, density * 3) : 1));
-  const bend = model.dense ? 0 : g.edge.curve;
-  const rise = (form === "armillary" || form === "relief") && !model.dense ? 0.07 : 0;
+  const edgeC = rgba(g.edge.color, g.edge.alpha);
+  const contactC = rgba(g.contact.color, g.contact.alpha);
+  const moneyC = rgba(g.money.color, g.money.alpha);
+  const bend = g.edge.curve;
+  const rise = (form === "armillary" || form === "relief") ? 0.07 : 0;
   const steps = 22;
   const money: number[] = [];
   const edgeDelay = (e: number) => Math.max(0, Math.min(model.delay[es[e]], model.delay[et[e]]) - 0.08);
@@ -535,23 +478,23 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
     const k = edgeLit(e);
     if (!k) continue;
     const s: Stroke = type === EDGE.contact
-      ? { color: dim(contactC, k), width: g.contact.width * widthScale, dash: g.contact.dash, delay: edgeDelay(e) }
-      : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width * widthScale, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
+      ? { color: dim(contactC, k), width: g.contact.width, dash: g.contact.dash, delay: edgeDelay(e) }
+      : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
     if (keys) base.poly(route(e), s);
     else base.curve(P(es[e]), P(et[e]), bend, rise, s, steps);
   }
 
   const rand = mulberry32(3);
-  const strong = (e: number) => model.dense || ew[e] >= 2;
-  const mw = (e: number) => (model.dense ? 1 : strong(e) ? g.money.width * (0.5 + ew[e] * 0.085) : g.money.weak);
-  const lift = model.dense || grounded ? 0 : form === "armillary" || form === "relief" ? 0.24 : form === "dome" ? 0.2 : 0;
+  const strong = (e: number) => ew[e] >= 2;
+  const mw = (e: number) => (strong(e) ? g.money.width * (0.5 + ew[e] * 0.085) : g.money.weak);
+  const lift = grounded ? 0 : form === "armillary" || form === "relief" ? 0.24 : form === "dome" ? 0.2 : 0;
   for (const e of money) {
     if (!edgeLit(e)) continue;
     const color = dim(moneyC, edgeLit(e) * (strong(e) ? 1 : g.money.weakAlpha));
-    const s: Stroke = { color, width: mw(e) * (strong(e) ? widthScale : 1), phase: rand(), delay: edgeDelay(e) };
+    const s: Stroke = { color, width: mw(e), phase: rand(), delay: edgeDelay(e) };
     if (strong(e)) {
       if (g.money.mode === "pulse") { s.flow = 0.16 + rand() * 0.14; s.pulse = 1.5; }
-      else { s.dash = model.dense ? 6 : 8; s.flow = 0.9; }
+      else { s.dash = 8; s.flow = 0.9; }
     }
     if (keys) flows.poly(route(e), s);
     else flows.curve(P(es[e]), P(et[e]), bend, strong(e) ? lift : rise, s, steps);
@@ -570,7 +513,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
           if (!used.has(cy * 4096 + cx)) boxes.box(cx * p, cy * p, 0, p * 0.36, 4, blank, shadeRgb(blank, 0.7), ink, blk.outline, 0, Math.min(1, Math.hypot(cx * p, cy * p) / model.half));
     }
     for (let i = 0; i < n; i++) {
-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
+      if (!fa(i)) continue;
       const half = keys ? keys.pitch * 0.36 : model.radius[i] * blk.width;
       const hot = i === model.focus && blk.focus;
       let top = hot ? rgba(blk.focus!) : blk.paint === "sector" ? colors[model.sector[i]] : rgba(blk.top);
@@ -586,20 +529,20 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
   if (stemmed) {
     const foot = rgba(g.guide.color, 0.75);
     for (let i = 0; i < n; i++) {
-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
+      if (!fa(i)) continue;
       writeMark(marks, c++, x[i], y[i], model.zBase[i], 1.3, SHAPE.circle, dim(foot, (lit(i) ? 1 : 0.25) * fa(i)), 0, 1, 0, 1, model.delay[i]);
     }
   }
   const glyph = blk?.glyph ? rgba(blk.glyph) : null;
   for (let i = 0; i < n; i++) {
     if (!fa(i)) continue;
-    const boxed = blk && !(model.dense && model.radius[i] < 4);
+    const boxed = !!blk;
     const own = boxed && i === model.focus && blk.focus ? rgba("#FFFFFF") : boxed && glyph ? glyph : colors[model.sector[i]];
     const col = dim(own, (lit(i) ? 1 : 0.2) * fa(i));
     const r = model.radius[i] * (boxed ? g.node.scale : blk ? 1 : g.node.scale);
     const hollow = model.shape[i] !== SHAPE.asterisk && (g.node.hollowAll || (g.node.hollowOfficials && model.hollow[i] === 1));
     const knock = boxed ? 0 : -1;
-    writeMark(marks, c++, x[i], y[i], z[i], r, model.shape[i], col, hollow ? g.node.stroke : 0, hollow ? knock : 1, model.dense ? 0 : g.node.halo, 1, Math.min(1, model.delay[i] + 0.1));
+    writeMark(marks, c++, x[i], y[i], z[i], r, model.shape[i], col, hollow ? g.node.stroke : 0, hollow ? knock : 1, g.node.halo, 1, Math.min(1, model.delay[i] + 0.1));
   }
   const reach = (i: number) => (keys ? keys.pitch * 0.5 : blk ? model.radius[i] * blk.width * 1.2 : model.radius[i] * g.node.scale);
   const ring = (i: number, pad: number, width: number, color: RGBA) =>
