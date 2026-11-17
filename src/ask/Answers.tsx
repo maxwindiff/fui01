@@ -435,14 +435,8 @@ function CardView({ card, look, slot }: { card: Card; look: Look; slot: Slot }) 
             </span>
           ) : null}
           <button type="button" className="panel-ask" aria-label={`Ask about ${card.title}`} data-tip="Ask about this" onClick={(e) => { e.stopPropagation(); board.insert([{ kind: "card", id: card.id }]); }}><AskIcon /></button>
-          {card.pinned ? (
-            <button type="button" className="ans-x" aria-label={`Remove ${card.title}`} data-tip="Remove" onClick={() => board.remove(card.id)}><X /></button>
-          ) : (
-            <>
-              <button type="button" className="btn quiet" onClick={() => board.remove(card.id)}>Discard</button>
-              <button type="button" className="btn" onClick={() => board.pin(card.id)}>Pin</button>
-            </>
-          )}
+          {card.pinned ? null : <button type="button" className="btn" onClick={() => board.pin(card.id)}>Pin</button>}
+          <button type="button" className="ans-x" aria-label={`Remove ${card.title}`} data-tip="Remove" onClick={() => board.remove(card.id)}><X /></button>
         </span>
       </header>
       <p className="ans-q"><Question card={card} />{from && !card.parts?.some((p) => typeof p !== "string" && p.kind !== "set" && p.id === card.from) ? <button type="button" className="ans-from" onClick={() => reveal(card.from!)}>on {from}</button> : null}{busy ? <Status text={busy.status} /> : null}</p>
@@ -624,9 +618,11 @@ function useArrange(layout: Layout, col: RefObject<HTMLDivElement | null>, order
       if (layout === "column") groups = [{ ids: order.map((o) => o.id), top: 0, limit: (c?.clientHeight ?? innerHeight) - 8 }];
       else {
         const by = new Map<string, string[]>();
-        const root = (o: Placed): string => { const p = o.from && order.find((x) => x.id === o.from); return p ? root(p) : anchorOf(o) ?? "top"; };
+        const root = (o: Placed): string => { const p = o.from && order.find((x) => x.id === o.from); return p ? root(p) : anchorOf(o) ?? "02"; };
         for (const o of order) { const k = root(o); by.set(k, [...(by.get(k) ?? []), o.id]); }
-        groups = [...by.values()].map((g, k) => ({ ids: g, top: k * 1e6, limit: k * 1e6 + innerHeight * 0.85 }));
+        // A slot with two columns holds about twice the height of answers before they overflow the window.
+        const cols = (fig: string) => { const el = document.querySelector<HTMLElement>(`[data-slot="${fig}"]`); return el ? Math.min(2, getComputedStyle(el).gridTemplateColumns.split(" ").length) : 1; };
+        groups = [...by].map(([fig, g], k) => ({ ids: g, top: k * 1e6, limit: k * 1e6 + innerHeight * 0.85 * cols(fig) }));
       }
     }
     const next = foldFor(groups, full, mini, keep, shut, age);

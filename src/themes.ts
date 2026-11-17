@@ -199,7 +199,7 @@ const vellum: Theme = {
     edge: { color: "#171B1A", alpha: 0.34, width: 0.8, curve: 0.22 },
     money: { color: "#E2581B", alpha: 0.95, width: 1.7, weak: 0.8, weakAlpha: 0.6, mode: "dash" },
     contact: { color: "#4E59B8", alpha: 0.7, width: 0.9, dash: 0 },
-    node: { stroke: 1.1, hollowOfficials: true, halo: 0, scale: 1 },
+    node: { stroke: 1.1, hollowOfficials: true, halo: 0, scale: 0.65 },
     focus: { color: "#171B1A", ring: 1.2 },
     guide: { color: "#171B1A", alpha: 0.16 },
     map: {
@@ -340,7 +340,7 @@ const orrery: Theme = {
     edge: { color: "#D8A44A", alpha: 0.3, width: 0.8, curve: 0.3 },
     money: { color: "#FF8B1F", alpha: 1, width: 1.6, weak: 0.8, weakAlpha: 0.5, mode: "pulse" },
     contact: { color: "#3FCDB8", alpha: 0.6, width: 0.8, dash: 0 },
-    node: { stroke: 1.2, hollowOfficials: true, halo: 0, scale: 1 },
+    node: { stroke: 1.2, hollowOfficials: true, halo: 0, scale: 0.65 },
     focus: { color: "#FF8B1F", ring: 1.4 },
     guide: { color: "#D8A44A", alpha: 0.34 },
     map: {
@@ -762,7 +762,7 @@ const massif: Theme = {
     edge: { color: "#A2ABB3", alpha: 0.26, width: 0.7, curve: 0.1 },
     money: { color: "#FF4A1C", alpha: 1, width: 1.7, weak: 0.8, weakAlpha: 0.55, mode: "pulse" },
     contact: { color: "#4FAEF0", alpha: 0.65, width: 0.8, dash: 0 },
-    node: { stroke: 1.2, hollowOfficials: true, halo: 0, scale: 1 },
+    node: { stroke: 1.2, hollowOfficials: true, halo: 0, scale: 0.65 },
     focus: { color: "#FF4A1C", ring: 1.4 },
     guide: { color: "#A2ABB3", alpha: 0.4 },
     map: {
@@ -895,7 +895,7 @@ const phosphor: Theme = {
     edge: { color: "#FF4A2B", alpha: 0.34, width: 0.9, curve: 0 },
     money: { color: "#FFC53D", alpha: 1, width: 1.6, weak: 0.9, weakAlpha: 0.5, mode: "dash" },
     contact: { color: "#3DE6E0", alpha: 0.75, width: 0.9, dash: 0 },
-    node: { stroke: 1.5, hollowOfficials: true, hollowAll: true, halo: 5, scale: 1.05 },
+    node: { stroke: 1.5, hollowOfficials: true, hollowAll: true, halo: 5, scale: 0.7 },
     focus: { color: "#FFC53D", ring: 1.4 },
     guide: { color: "#2FD9A0", alpha: 0.42 },
     map: {
