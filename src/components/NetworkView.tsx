@@ -3,11 +3,13 @@ import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
 import { motion } from "../motion";
 import type { Camera } from "../gpu/scene";
 import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/network";
-import type { NetModel } from "../gpu/network";
+import type { Emph, NetModel } from "../gpu/network";
 import { rgba } from "../themes";
-import type { Theme } from "../themes";
+import type { RGBA, Theme } from "../themes";
 import { Glyph, Segmented, usePanel } from "./primitives";
 import type { Kind, Sector } from "../data";
+import { board, useBoard } from "../ask/board";
+import { cssColor, emphasis, useLinks } from "../links";
 import { useWs, ws } from "../workspace";
 
 type Density = "case" | "5k" | "100k";
@@ -26,6 +28,8 @@ class NetController {
   private deep: Theme["gpu"]["deep"];
   private drag: { x: number; y: number; moved: boolean } | null = null;
   private hovering = false;
+  private hovered = -1;
+  private lk: (id: string) => string = () => "";
   private tween: { from: Pose; to: Pose; t0: number; ms: number } | null = null;
   private idle = 0;
   private restYaw = 0;
@@ -41,7 +45,7 @@ class NetController {
   constructor(
     gpu: Awaited<ReturnType<typeof getGpu>>, private canvas: HTMLCanvasElement, private labels: HTMLElement,
     private hoverEl: HTMLElement, private theme: Theme,
-    private cb: { select: (r: Readout | null) => void; stats: (s: Stats) => void; frame: (ms: number) => void },
+    private cb: { select: (r: Readout | null) => void; stats: (s: Stats) => void; frame: (ms: number) => void; hover?: (id: string | null) => void },
   ) {
     this.deep = theme.gpu.deep;
     this.deepOn = !!this.deep;
@@ -99,6 +103,7 @@ class NetController {
       return el;
     };
     this.labelEls = model.labels.map((i) => add("net-label" + (i === model.focus ? " focus" : ""), model.names[i] ?? ""));
+    this.applyLinks();
     this.anchors = [];
     model.rings.slice(0, 3).forEach((r, k) =>
       this.anchors.push({ el: add("net-ring-label", ["1st degree", "2nd degree", "3rd degree"][k]), p: [0, -r, model.ringZ[k]], center: true }));
@@ -231,7 +236,7 @@ class NetController {
   };
 
   private rebuild() {
-    const b = buildNetBuffers(this.model, this.theme, this.selected);
+    const b = buildNetBuffers(this.model, this.theme, this.selected, this.model.dense ? null : this.emph);
     this.scene.setLayer("quads", b.quads.data, b.quads.count);
     this.scene.setLayer("surface", b.surface, b.surfaceCount);
     this.scene.setLayer("base", b.base.data, b.base.count);
@@ -322,9 +327,11 @@ class NetController {
       this.drag.x = e.clientX; this.drag.y = e.clientY;
       this.layout();
       this.hoverEl.hidden = true;
+      this.hoverAt(-1);
       return;
     }
     const i = this.hit(e.offsetX, e.offsetY);
+    this.hoverAt(i);
     this.canvas.style.cursor = i >= 0 ? "pointer" : "grab";
     if (i < 0) { this.hoverEl.hidden = true; return; }
     const m = this.model;
@@ -362,7 +369,49 @@ class NetController {
     if (i >= 0) this.select(i);
   }
   private enter = () => { this.hovering = true; };
-  private leave = () => { this.hovering = false; this.hoverEl.hidden = true; };
+  private leave = () => { this.hovering = false; this.hoverEl.hidden = true; this.hoverAt(-1); };
+  // Only named entities are records, so hovering the unnamed crowd reports nothing.
+  private hoverAt(i: number) {
+    if (i === this.hovered) return;
+    this.hovered = i;
+    const m = this.model;
+    this.cb.hover?.(i >= 0 && m.names[i] ? m.ids[i] : null);
+  }
+  // Classes from the shared selection, lenses and hover go on the labels. The nodes take the same classes as an
+  // alpha and an outline ring each, read from the classes the way the stylesheet reads them for other panels.
+  private emph: Emph | null = null;
+  private emphKey = "";
+  setLinks(lk: (id: string) => string, root = "") {
+    this.lk = lk;
+    this.applyLinks();
+    const m = this.model;
+    if (!root || m.dense) {
+      if (this.emph) { this.emph = null; this.emphKey = ""; this.rebuild(); }
+      return;
+    }
+    const alpha = new Float32Array(m.n).fill(1);
+    const rings: Emph["rings"] = [];
+    const colors = new Map<string, RGBA>();
+    const color = (v: string) => { let c = colors.get(v); if (!c) { c = cssColor(this.canvas, v); colors.set(v, c); } return c; };
+    for (let i = 0; i < m.n; i++) {
+      const e = emphasis(lk(m.ids[i] ?? ""), root);
+      alpha[i] = e.alpha;
+      if (e.ring && e.alpha > 0) rings.push({ i, color: color(e.ring) });
+    }
+    const key = `${root}|${[...alpha].join()}|${rings.map((r) => `${r.i}:${r.color.join()}`).join()}`;
+    if (key === this.emphKey) return;
+    this.emphKey = key;
+    this.emph = { alpha, rings };
+    this.rebuild();
+  }
+  private applyLinks() {
+    const m = this.model;
+    this.labelEls.forEach((el, k) => {
+      for (const c of [...el.classList]) if (c === "lk" || c.startsWith("lk-")) el.classList.remove(c);
+      const cls = this.lk(m.ids[m.labels[k]]);
+      if (cls) el.classList.add(...cls.split(" "));
+    });
+  }
   private wheel = (e: WheelEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -411,7 +460,10 @@ export function NetworkView({ theme }: { theme: Theme }) {
     let gone = false;
     getGpu().then((gpu) => {
       if (gone) return;
-      ctl.current = new NetController(gpu, canvas.current!, labels.current!, hover.current!, theme, { select: setReadout, stats: setStats, frame: setFrame });
+      ctl.current = new NetController(gpu, canvas.current!, labels.current!, hover.current!, theme, {
+        select: setReadout, stats: setStats, frame: setFrame,
+        hover: (id) => board.hover(id ? { ids: [id], from: "mark", at: "01" } : null),
+      });
       ctl.current.setModel(buildCoreModel(theme.gpu), theme.motion.reveal);
       setStatus("ready");
       document.fonts.ready.then(() => { ctl.current?.measure(); ctl.current?.layout(); });
@@ -442,6 +494,15 @@ export function NetworkView({ theme }: { theme: Theme }) {
   useEffect(() => {
     if (readout?.id && inspected) ws.inspect(readout.id);
   }, [readout]);
+  // A selected entity is the page's selection, and the selection, lenses and hovered records elsewhere mark the
+  // labels of the entities they involve.
+  useEffect(() => {
+    if (readout?.id) board.select({ ids: [readout.id], label: readout.name, from: "01" });
+  }, [readout]);
+  const links = useLinks("01");
+  const selFrom = useBoard((s) => s.sel.from);
+  // The network's own selection already lights the selected entity and its ties.
+  useEffect(() => { ctl.current?.setLinks((id) => links.mark([id]), (links.root ?? "").split(" ").filter((f) => f !== "sel" || selFrom !== "01").join(" ")); }, [links, status, selFrom]);
 
   const change = (d: Density) => {
     setDensity(d);
@@ -455,7 +516,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
   return (
     <div className="viz net" data-dense={density !== "case"}>
       <canvas ref={canvas} aria-label="Relationship network" />
-      <div className="viz-labels" ref={labels} />
+      <div className="viz-labels" ref={labels} data-lk={links.root} />
       <div className="net-hover" ref={hover} hidden>
         <i />
         <span><b /><em /></span>

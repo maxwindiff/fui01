@@ -1,8 +1,8 @@
 import { examples } from "./agent.js";
-import { TABLES } from "./data.js";
+import { TABLES } from "../tables.js";
 import { CONVENTIONS, TOKENS } from "./spec.js";
 
-// The system prompt for the model behind the Ask page. The server builds it once, so it stays the same from one
+// The system prompt for the model that answers questions beside the case board. The server builds it once, so it stays the same from one
 // request to the next and the provider can cache it.
 
 function describeTables() {

@@ -12,32 +12,16 @@ import { Affiliation, PersonCard } from "./components/Person";
 import { Timeline } from "./components/Timeline";
 import { MoneyFlow, Multiples, SlopeChart, SpendChart } from "./components/Charts";
 import { DocList, DocViewer, FilingsTable, Finding } from "./components/Records";
-import { Controls } from "./components/Controls";
 import { Inspector } from "./components/Inspector";
 import { TipLayer } from "./tip";
 import { getState, useWs, ws } from "./workspace";
-import { DOCS, FILINGS, fmtMoney, GRAPH, STATE_GIVING, WINDOW_CONTACTS } from "./data";
+import { useBoard } from "./ask/board";
+import { Scopes } from "./ask/Scopes";
+import { showData } from "./ask/sources";
+import { DOCS, FILINGS, FLOW_TOTAL, fmtMoney, GLANCE, GRAPH, STATE_GIVING, WINDOW_CONTACTS } from "./data";
 
-// The Ask page brings DuckDB with it, so it loads only when opened.
-const Ask = lazy(() => import("./ask/Ask").then((m) => ({ default: m.Ask })));
-
-function Masthead({ theme }: { theme: Theme }) {
-  return (
-    <section className="mast">
-      <h1 className="mast-name">{theme.name}</h1>
-      <ul className="swatches">
-        {theme.palette.map((p) => (
-          <li key={p.name}><i style={{ background: `var(${p.var})` }} /><b>{p.name}</b><span>{p.role}</span></li>
-        ))}
-      </ul>
-      <ul className="types">
-        {theme.type.map((t) => (
-          <li key={t.family}><span className="note">{t.family}</span><p style={{ fontFamily: `var(${t.var})` }}>{t.sample}</p></li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+// The answers column brings DuckDB and the chart renderer with it, so it loads after the case board.
+const Answers = lazy(() => import("./ask/Answers").then((m) => ({ default: m.Answers })));
 
 function BriefMenu() {
   const brief = useWs((s) => s.brief);
@@ -82,13 +66,19 @@ function DocGlance() {
   return <>{DOCS.find((d) => d.id === doc)!.title}</>;
 }
 
-function Frame({ children, credit }: { children: ReactNode; credit: boolean }) {
+// The case panels on the left, and answers to questions about them on the right.
+function Frame({ children, aside }: { children: ReactNode; aside: ReactNode }) {
   const stage = useWs((s) => s.stage);
   const inspecting = useWs((s) => s.trail.length > 0);
+  const layout = useBoard((s) => s.layout);
   return (
     <div className="shell" data-inspect={inspecting ? "" : undefined}>
-      <main className="board" data-stage={stage ?? undefined}>{children}</main>
-      <footer className="foot">All names and figures are invented.{credit ? <> The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</> : null}</footer>
+      <div className="case" data-layout={layout}>
+        <Scopes />
+        <main className="board" data-stage={stage ?? undefined}>{children}</main>
+        {aside}
+      </div>
+      <footer className="foot">All names and figures are invented. The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</footer>
     </div>
   );
 }
@@ -99,34 +89,27 @@ const T = PANEL_TITLES;
 function CaseBoard({ theme }: { theme: Theme }) {
   return (
     <>
-      <Masthead theme={theme} />
-      <Panel fig="01" title={T["01"]} ask="Who is Whitcombe connected to?" span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
-      <Panel fig="02" title={T["02"]} span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
-      <Panel fig="03" title={T["03"]} span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
-      <Panel fig="04" title={T["04"]} ask="Which states do Whitcombe's donors live in?" meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
-      <Panel fig="05" title={T["05"]} ask="What led up to the award?" meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
-      <Panel fig="06" title={T["06"]} ask="Who funds Whitcombe?" meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
-      <Panel fig="07" title={T["07"]} ask="How much did each client spend on lobbying per quarter?" span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
-      <Panel fig="08" title={T["08"]} ask="Compare aerospace giving to Whitcombe and Brandt" span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
-      <Panel fig="09" title={T["09"]} span={8} glance="Six offices over 18 months"><Multiples /></Panel>
-      <Panel fig="10" title={T["10"]} ask="Which firms filed lobbying disclosures for Halvorsen?" span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
-      <Panel fig="11" title={T["11"]} span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
-      <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
-      <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
-      <Panel fig="14" title={T["14"]} glance="Search, filters, actions, readouts"><Controls /></Panel>
+      <Panel fig="02" title={T["02"]} data={() => showData("02")} ask="Who gives Whitcombe the most?" glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
+      <Panel fig="01" title={T["01"]} data={() => showData("01")} ask="Who is Whitcombe connected to?" flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
+      <Panel fig="03" title={T["03"]} data={() => showData("03")} ask="Where does Whitcombe sit among senators by voting record?" glance={GLANCE.affiliation}><Affiliation /></Panel>
+      <Panel fig="04" title={T["04"]} data={() => showData("04")} ask="Which states do the senators' donors live in?" meta="2024 cycle" flush glance={`${fmtMoney(giving)} from ${Object.keys(STATE_GIVING).length} states`}><MapView theme={theme} /></Panel>
+      <Panel fig="05" title={T["05"]} data={() => showData("05")} ask="What happened around the award?" meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
+      <Panel fig="06" title={T["06"]} data={() => showData("06")} ask="Where does the money go?" meta={`2024 cycle, ${fmtMoney(FLOW_TOTAL)}`} glance={GLANCE.flow}><MoneyFlow /></Panel>
+      <Panel fig="07" title={T["07"]} data={() => showData("07")} ask="How much did each client spend on lobbying per quarter?" glance={GLANCE.spend}><SpendChart /></Panel>
+      <Panel fig="08" title={T["08"]} data={() => showData("08")} ask="How did aerospace giving shift between the senators?" glance={GLANCE.slope}><SlopeChart /></Panel>
+      <Panel fig="09" title={T["09"]} data={() => showData("09")} ask="Which offices did lobbyists contact, and when?" glance={GLANCE.multiples}><Multiples /></Panel>
+      <Panel fig="10" title={T["10"]} data={() => showData("10")} ask="Which firms filed lobbying disclosures for Halvorsen?" glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
+      <Panel fig="11" title={T["11"]} data={() => showData("11")} ask="Did contacts rise before the award?" glance="Finding 3 of 7, high confidence"><Finding /></Panel>
+      <Panel fig="12" title={T["12"]} data={() => showData("12")} ask="What does this document say?" glance={<DocGlance />}><DocViewer /></Panel>
+      <Panel fig="13" title={T["13"]} data={() => showData("13")} ask="Which documents matter most?" meta={`${DOCS.length} of 1,804`} glance={`${DOCS.length} of 1,804 in this view`}><DocList /></Panel>
     </>
   );
 }
 
-type Page = "case" | "ask";
-const fromHash = () => {
-  const [theme, page] = location.hash.slice(1).split("/");
-  return { theme: themeById(theme).id, page: (page === "ask" || page === "labs" ? "ask" : "case") as Page };
-};
+const fromHash = () => themeById(location.hash.slice(1).split("/")[0]).id;
 
 export function App() {
-  const [id, setId] = useState(() => fromHash().theme);
-  const [page, setPage] = useState<Page>(() => fromHash().page);
+  const [id, setId] = useState(fromHash);
   const theme = themeById(id);
   const notes = useMemo(() => notesFor(theme), [theme]);
 
@@ -143,20 +126,8 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    history.replaceState(null, "", `#${theme.id}${page === "ask" ? "/ask" : ""}`);
-  }, [theme, page]);
-
-  const draft = useWs((s) => s.draft);
-  useEffect(() => {
-    if (draft !== null && page !== "ask") { setPage("ask"); scrollTo(0, 0); }
-  }, [draft, page]);
-
-  const go = (next: Page) => {
-    if (next === page) return;
-    ws.reset();
-    setPage(next);
-    scrollTo(0, 0);
-  };
+    history.replaceState(null, "", `#${theme.id}`);
+  }, [theme]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -167,7 +138,7 @@ export function App() {
         else if (stage) ws.setStage(null);
         return;
       }
-      if ((e.target as HTMLElement).closest("input, textarea")) return;
+      if ((e.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) return;
       const t = THEMES[+e.key - 1];
       if (t) setId(t.id);
     };
@@ -186,15 +157,14 @@ export function App() {
       </svg>
       <TipLayer notes={notes} />
       <header className="switcher">
-        <Segmented label="Page" value={page} onChange={go} options={[{ value: "case", label: "Case" }, { value: "ask", label: "Ask", tip: "Views drawn in answer to a question" }]} />
         <Segmented label="Theme" value={id} onChange={setId} options={THEMES.map((t, i) => ({ value: t.id, label: t.name, tip: `Key ${i + 1}` }))} />
         <Crumbs root="Whitcombe case" />
         <MotionControl />
         <BriefButton />
       </header>
       <BriefMenu />
-      <Frame key={`${theme.id}/${page}`} credit={page === "case"}>
-        {page === "ask" ? <Suspense fallback={null}><Ask theme={theme} /></Suspense> : <CaseBoard theme={theme} />}
+      <Frame key={theme.id} aside={<Suspense fallback={<aside className="answers" />}><Answers theme={theme} /></Suspense>}>
+        <CaseBoard theme={theme} />
       </Frame>
       <Inspector />
     </>

@@ -14,11 +14,9 @@ export interface State {
   command: Command;
   level: number;
   replays: number;
-  // A question written on the case board for the Ask page, which fills its input with it and waits.
-  draft: string | null;
 }
 
-let state: State = { stage: null, trail: [], doc: "E-0212", brief: [], command: { name: "", n: 0 }, level: motion.level, replays: 0, draft: null };
+let state: State = { stage: null, trail: [], doc: "E-0212", brief: [], command: { name: "", n: 0 }, level: motion.level, replays: 0 };
 const subs = new Set<() => void>();
 const set = (patch: Partial<State>) => {
   state = { ...state, ...patch };
@@ -94,15 +92,6 @@ export const ws = {
   },
   toggleBrief(item: string) {
     set({ brief: state.brief.includes(item) ? state.brief.filter((x) => x !== item) : [...state.brief, item] });
-  },
-  askAbout(question: string) {
-    tip.hide();
-    set({ draft: question, stage: null, trail: [] });
-  },
-  takeDraft() {
-    const d = state.draft;
-    if (d !== null) set({ draft: null });
-    return d;
   },
   run(name: string, arg?: string) { set({ command: { name, arg, n: state.command.n + 1 } }); },
   // A change of level replays the entry of the panels in view, so the reader can compare levels on the spot.

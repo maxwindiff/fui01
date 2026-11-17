@@ -1,8 +1,8 @@
-# Model evals for the Ask page
+# Model evals for the question box
 
-`run.mjs` asks the question sequences in `questions.json` through the real Ask page in headless Chrome, one browser context per sequence, and records each answer in `runs/<name>/results.jsonl`: the SQL and layers the model showed, the first rows of each table, the queries it ran, problems the page sent back, latency, calls and cost. Later questions in a sequence are follow-ups, and the summary of each view comes back with the next question.
+`run.mjs` asks the question sequences in `questions.json` through the question box on the case page in headless Chrome, with the scripted answers turned off, one browser context per sequence, and records each answer in `runs/<name>/results.jsonl`: the SQL and layers the model showed, the first rows of each table, the queries it ran, problems the page sent back, latency, calls and cost. Later questions in a sequence are follow-ups, and the summary of each view comes back with the next question.
 
-`grade.py` scores runs against the right answers from `src/ask/data.ts`: whether a view was drawn, whether its SQL kept the conditions the question asked for, and whether the summary's numbers are right. `report.py` writes a readable `report.md` for each run.
+`grade.py` scores runs against the right answers from `src/tables.ts`: whether a view was drawn, whether its SQL kept the conditions the question asked for, and whether the summary's numbers are right. `report.py` writes a readable `report.md` for each run.
 
 ```sh
 npm run dev                                   # with OPENROUTER_API_KEY in .env.local

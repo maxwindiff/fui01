@@ -18,11 +18,13 @@ export function fmtValue(a: Answer | null, field: string, v: unknown, type?: str
   if (Array.isArray(v)) return `${v.length} rows`;
   if (v instanceof Date) v = v.getTime();
   if (typeof v === "number") {
-    if (f === "date" || type === "temporal") return f === "date" || v % 864e5 === 0 ? fmtDate(v) : fmtDate(v, true);
-    if (f === "time") return fmtTime(v);
-    if (f === "usd" || (!f && MONEY.test(field))) return fmtUsd(v);
-    if (f === "pct") return `${Math.round(v * 100)}%`;
-    return Number.isInteger(v) ? v.toLocaleString("en-US") : Math.abs(v) < 10 ? v.toFixed(2) : v.toFixed(1);
+    // Ticks computed as sums of steps can land a hair off zero.
+    const n = Math.abs(v) < 1e-9 ? 0 : v;
+    if (f === "date" || type === "temporal") return f === "date" || n % 864e5 === 0 ? fmtDate(n) : fmtDate(n, true);
+    if (f === "time") return fmtTime(n);
+    if (f === "usd" || (!f && MONEY.test(field))) return fmtUsd(n);
+    if (f === "pct") return `${Math.round(n * 100)}%`;
+    return Number.isInteger(n) ? n.toLocaleString("en-US") : Math.abs(n) < 10 ? n.toFixed(2) : n.toFixed(1);
   }
   return String(v);
 }

@@ -1,13 +1,13 @@
 # Scores runs of eval/run.mjs: python3 eval/grade.py eval/runs/*/results.jsonl
 # Each check is keyed by (sequence, question) in questions.json. A "sum" check reads the summary of that view, which
 # the model writes when the next question in the sequence is asked, so the last view of a sequence has none.
-# The expected numbers come from src/ask/data.ts.
+# The expected numbers come from src/tables.ts.
 import json, os, sys, re, collections
 def sql(r): return " ".join(t.get("sql", "") if isinstance(t, dict) else str(t) for t in ((r.get("answer") or {}).get("tables") or {}).values()) if isinstance(r.get("answer"), dict) else ""
 def has(s, *alts): return any(a.lower() in (s or "").lower() for a in alts)
 CHECKS = {
- (0,0): [("valid", lambda r,n: r["ok"]), ("sum", lambda r,n: has(n and n.get("summary"), "647", "202,700", "202.7", "379,000", "379"))],
- (0,1): [("valid", lambda r,n: r["ok"] and has(sql(r), "Aerospace and defense")), ("sum", lambda r,n: has(n and n.get("summary"), "379", "202,700", "202.7"))],
+ (0,0): [("valid", lambda r,n: r["ok"]), ("sum", lambda r,n: has(n and n.get("summary"), "653", "209,300", "209.3", "385,600", "385"))],
+ (0,1): [("valid", lambda r,n: r["ok"] and has(sql(r), "Aerospace and defense")), ("sum", lambda r,n: has(n and n.get("summary"), "385", "209,300", "209.3"))],
  (0,2): [("valid", lambda r,n: r["ok"] and has(sql(r), "quarter"))],
  (1,0): [("valid", lambda r,n: r["ok"] and re.search(r">=\s*40", sql(r))), ("sum", lambda r,n: has(n and n.get("summary"), "101"))],
  (1,1): [("valid", lambda r,n: r["ok"] and re.search(r">=\s*50", sql(r))), ("sum", lambda r,n: has(n and n.get("summary"), "64"))],

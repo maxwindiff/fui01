@@ -371,7 +371,11 @@ export function reliefDots(f: Field, color: RGBA, step: number): { data: Float32
   return { data, count: c };
 }
 
-export function buildNetBuffers(model: NetModel, theme: Theme, selected: number): NetBuffers {
+// How the page's selection, lenses and hovered records show on the nodes: an alpha for each node, 0 for a node a lens
+// hides, and outline rings for the nodes they match.
+export interface Emph { alpha: Float32Array; rings: { i: number; color: RGBA }[] }
+
+export function buildNetBuffers(model: NetModel, theme: Theme, selected: number, emph: Emph | null = null): NetBuffers {
   const g = theme.gpu;
   const form = g.deep?.form;
   const clockwork = theme.family === "orrery";
@@ -389,7 +393,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
     for (let k = model.adjStart[selected]; k < model.adjStart[selected + 1]; k++) near[model.adj[k]] = 1;
   }
   const lit = (i: number) => selected < 0 || near[i] === 1;
-  const edgeLit = (e: number) => (selected < 0 || es[e] === selected || et[e] === selected ? 1 : 0.13);
+  const fa = (i: number) => (emph ? emph.alpha[i] : 1);
+  const edgeLit = (e: number) => (selected < 0 || es[e] === selected || et[e] === selected ? 1 : 0.13) * Math.min(fa(es[e]), fa(et[e]));
   const dim = (c: RGBA, k: number): RGBA => [c[0], c[1], c[2], c[3] * k];
 
   const quads = new QuadWriter();
@@ -500,8 +505,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
   if (stemmed) {
     const stem = rgba(g.guide.color, model.dense ? 0.16 : form === "relief" ? 0.7 : 0.5);
     for (let i = 0; i < n; i++) {
-      if (model.dense && model.radius[i] < 4) continue;
-      base.line([x[i], y[i], model.zBase[i]], [x[i], y[i], z[i]], { color: dim(stem, lit(i) ? 1 : 0.25), width: 0.8, delay: model.delay[i] });
+      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
+      base.line([x[i], y[i], model.zBase[i]], [x[i], y[i], z[i]], { color: dim(stem, (lit(i) ? 1 : 0.25) * fa(i)), width: 0.8, delay: model.delay[i] });
     }
   }
 
@@ -528,6 +533,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
     const type = etype[e];
     if (type === EDGE.money) { money.push(e); continue; }
     const k = edgeLit(e);
+    if (!k) continue;
     const s: Stroke = type === EDGE.contact
       ? { color: dim(contactC, k), width: g.contact.width * widthScale, dash: g.contact.dash, delay: edgeDelay(e) }
       : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width * widthScale, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
@@ -540,6 +546,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
   const mw = (e: number) => (model.dense ? 1 : strong(e) ? g.money.width * (0.5 + ew[e] * 0.085) : g.money.weak);
   const lift = model.dense || grounded ? 0 : form === "armillary" || form === "relief" ? 0.24 : form === "dome" ? 0.2 : 0;
   for (const e of money) {
+    if (!edgeLit(e)) continue;
     const color = dim(moneyC, edgeLit(e) * (strong(e) ? 1 : g.money.weakAlpha));
     const s: Stroke = { color, width: mw(e) * (strong(e) ? widthScale : 1), phase: rand(), delay: edgeDelay(e) };
     if (strong(e)) {
@@ -563,31 +570,32 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
           if (!used.has(cy * 4096 + cx)) boxes.box(cx * p, cy * p, 0, p * 0.36, 4, blank, shadeRgb(blank, 0.7), ink, blk.outline, 0, Math.min(1, Math.hypot(cx * p, cy * p) / model.half));
     }
     for (let i = 0; i < n; i++) {
-      if (model.dense && model.radius[i] < 4) continue;
+      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
       const half = keys ? keys.pitch * 0.36 : model.radius[i] * blk.width;
       const hot = i === model.focus && blk.focus;
       let top = hot ? rgba(blk.focus!) : blk.paint === "sector" ? colors[model.sector[i]] : rgba(blk.top);
       let side = hot ? rgba(blk.focus!) : blk.paint === "sector" ? shadeRgb(colors[model.sector[i]], 0.82) : rgba(blk.side);
-      if (!lit(i)) { top = mixRgb(top, bg, 0.72); side = mixRgb(side, bg, 0.72); }
+      if (!lit(i) || fa(i) < 1) { top = mixRgb(top, bg, 0.72); side = mixRgb(side, bg, 0.72); }
       boxes.box(x[i], y[i], 0, half, z[i], top, side, ink, blk.outline, 0, model.delay[i], keys && lit(i) ? keys.lamp : 0);
       if (blk.shadow > 0 && lit(i)) shadows.shadow([x[i] - half, y[i] + half], [x[i] + half, y[i] - half], z[i], SUN, shade, model.delay[i]);
     }
   }
 
-  const marks = new Float32Array((n * (stemmed ? 2 : 1) + 4) * MARK_FLOATS);
+  const marks = new Float32Array((n * (stemmed ? 2 : 1) + 4 + (emph?.rings.length ?? 0)) * MARK_FLOATS);
   let c = 0;
   if (stemmed) {
     const foot = rgba(g.guide.color, 0.75);
     for (let i = 0; i < n; i++) {
-      if (model.dense && model.radius[i] < 4) continue;
-      writeMark(marks, c++, x[i], y[i], model.zBase[i], 1.3, SHAPE.circle, dim(foot, lit(i) ? 1 : 0.25), 0, 1, 0, 1, model.delay[i]);
+      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
+      writeMark(marks, c++, x[i], y[i], model.zBase[i], 1.3, SHAPE.circle, dim(foot, (lit(i) ? 1 : 0.25) * fa(i)), 0, 1, 0, 1, model.delay[i]);
     }
   }
   const glyph = blk?.glyph ? rgba(blk.glyph) : null;
   for (let i = 0; i < n; i++) {
+    if (!fa(i)) continue;
     const boxed = blk && !(model.dense && model.radius[i] < 4);
     const own = boxed && i === model.focus && blk.focus ? rgba("#FFFFFF") : boxed && glyph ? glyph : colors[model.sector[i]];
-    const col = dim(own, lit(i) ? 1 : 0.2);
+    const col = dim(own, (lit(i) ? 1 : 0.2) * fa(i));
     const r = model.radius[i] * (boxed ? g.node.scale : blk ? 1 : g.node.scale);
     const hollow = model.shape[i] !== SHAPE.asterisk && (g.node.hollowAll || (g.node.hollowOfficials && model.hollow[i] === 1));
     const knock = boxed ? 0 : -1;
@@ -596,11 +604,12 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number)
   const reach = (i: number) => (keys ? keys.pitch * 0.5 : blk ? model.radius[i] * blk.width * 1.2 : model.radius[i] * g.node.scale);
   const ring = (i: number, pad: number, width: number, color: RGBA) =>
     writeMark(marks, c++, x[i], y[i], z[i], reach(i) + pad, SHAPE.circle, color, width, 0, 0, 1, model.delay[i]);
-  if (model.focus >= 0 && selected !== model.focus) ring(model.focus, 5, g.focus.ring, rgba(g.focus.color, selected < 0 ? 1 : 0.4));
+  if (model.focus >= 0 && selected !== model.focus && fa(model.focus)) ring(model.focus, 5, g.focus.ring, rgba(g.focus.color, selected < 0 ? 1 : 0.4));
   if (selected >= 0) {
     ring(selected, 5, g.focus.ring * 1.3, rgba(g.focus.color));
     ring(selected, 9.5, 0.8, rgba(g.focus.color, 0.55));
   }
+  for (const r of emph?.rings ?? []) if (r.i !== selected) ring(r.i, 4, g.focus.ring * 1.2, r.color);
   return { quads, surface, surfaceCount, base, flows, shadows, boxes, marks, markCount: c };
 }
 

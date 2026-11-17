@@ -10,7 +10,25 @@ npm run dev      # http://127.0.0.1:5183
 npm run build    # type-check, then a production build in dist/
 ```
 
-Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for example `#console`. Phosphor is left out of the selector and loads from `#phosphor`. The Ask page draws a view in answer to a question. Open it from the top bar or with `/ask` after the theme id, for example `#vellum/ask`. Each answer is a set of SQL queries and a description of one view, and the queries run in the browser in DuckDB-Wasm. Comparisons in the SQL become controls on the page, and every question and edit goes into a history tree that can branch. Switching between chart and table leaves the history alone. Once a new question is asked, each run of edits under an earlier question is folded into a pill in the tree, except where a branch starts. Clicking a pill shows the edits again until the next question. A script stands in for the agent, so the page answers a fixed set of questions. Its views include bars, swarms, a map, cells, a timeline and a network, and selecting an entity opens its card. The questions used to test the design are in `docs/ask-questions.md`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
+Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for example `#console`. Phosphor is left out of the selector and loads from `#phosphor`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
+
+The page has a toolbar, the case panels on the left, and answers to questions about them on the right. Both columns are drawn from the case tables in `src/tables.ts`. `src/data.ts` works out what each case panel shows, and `src/ask/sources.ts` writes the same data as SQL over the tables, one set of queries per panel. A question asked about a panel gets the panel's rows as context, and the table button on a panel opens its data as an answer.
+
+Selecting a mark anywhere marks the same records, and the entities they involve, in every panel and answer. The toolbar shows the selection beside a search field, which selects the records whose text matches. Keep turns the selection into a lens, a named set of records that stays on the page. A lens marks its records, dims everything else, or hides everything else. Hiding takes the other rows out of answers before they are laid out, so their axes fit what is left.
+
+A question is text with scopes in it. A scope is a panel, an answer, the selection or a lens. The ask button on a panel or an answer puts it in the question box, and so do a click on a chip in the toolbar, dragging the chip, the + button, and typing @ (`/` focuses the box). The question is about the first panel or answer it names, or about the whole case when it names none.
+
+The layout picked in the toolbar decides where answers go:
+
+- **Beside** puts each answer level with the panel it was asked about, and a follow-up under the answer it follows. An answer about the whole case goes level with the panel that was on screen when it was asked.
+- **Column** lists answers in the order they were asked, in a column that scrolls by itself.
+- **Below** puts answers under their panels and gives the board the full width.
+
+When the answers in one place take more room than they have, the oldest fold to their titles. The answer touched last, the newest answer, answers named in the question box and answers opened by hand stay open.
+
+An answer can be a chart, a stack of charts on a shared time axis, a written answer, or a lens. A chart answer is a set of SQL queries over the case tables and a description of one view. The queries run in the browser in DuckDB-Wasm, and comparisons in the SQL become chips that change the answer. A chart answer also shows as a table, and in 3D in browsers with WebGPU. Its bars can be split by a column of the rows behind them, or opened up into those rows. A written answer links phrases to the records behind them. Hovering a phrase lights those records in every chart, and selecting it makes them the selection.
+
+Answers that are not pinned are dropped when the page reloads. Pinned answers, lenses and the layout are saved in the browser. A script answers a fixed set of questions, which the + menu lists, and other questions go to a model through `api/ask.ts`. The questions used to test the design are in `docs/ask-questions.md`.
 
 ## Rendering
 

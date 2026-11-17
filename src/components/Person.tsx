@@ -1,5 +1,6 @@
-import { CONNECTIONS, fmtMoney, LEAN, LEAN_FOCUS, SEATS, SPARK_CONTACTS, SPARK_MONEY, VOTES } from "../data";
+import { CONNECTIONS, fmtMoney, LAST_VOTES, LEAN, LEAN_FOCUS, PERSON_CONTACTS, PERSON_MONEY, SEATS } from "../data";
 import { Count, Ent, PartyChip, Spark, useSize } from "./primitives";
+import { useLinks } from "../links";
 import portrait from "../assets/portrait.jpg";
 
 function Portrait() {
@@ -18,8 +19,9 @@ function Portrait() {
 
 export function PersonCard() {
   const max = Math.max(...CONNECTIONS.map((c) => c.v));
+  const links = useLinks("02");
   return (
-    <div className="person">
+    <div className="person" data-lk={links.root}>
       <div className="person-top">
         <Portrait />
         <div className="person-head">
@@ -35,19 +37,19 @@ export function PersonCard() {
       <dl className="facts">
         <div>
           <dt>From this network</dt>
-          <dd><b><Count to={1960} fmt={fmtMoney} /></b><Spark data={SPARK_MONEY} kind="bar" accent /></dd>
-          <dd className="sub">2024 cycle, gifts and ads. Peak in Sep 2025.</dd>
+          <dd><b><Count to={PERSON_MONEY.total} fmt={fmtMoney} /></b><Spark data={PERSON_MONEY.spark} kind="bar" accent /></dd>
+          <dd className="sub">2024 cycle, aerospace gifts and ads. Peak in {PERSON_MONEY.peak}.</dd>
         </div>
         <div>
           <dt>Logged contacts</dt>
-          <dd><b><Count to={74} /></b><Spark data={SPARK_CONTACTS} /></dd>
-          <dd className="sub">Office calendar and lobbying reports, 16 months.</dd>
+          <dd><b><Count to={PERSON_CONTACTS.n} /></b><Spark data={PERSON_CONTACTS.spark} /></dd>
+          <dd className="sub">With her office and the subcommittee staff, {PERSON_CONTACTS.months} months.</dd>
         </div>
       </dl>
       <h4 className="sub-h">Strongest ties</h4>
       <ol className="ties">
         {CONNECTIONS.map((c) => (
-          <li key={c.id} style={{ ["--k" as string]: CONNECTIONS.indexOf(c) * 3 }}>
+          <li key={c.id} className={links.mark([c.id])} style={{ ["--k" as string]: CONNECTIONS.indexOf(c) * 3 }} {...links.on([c.id], c.name)}>
             <Ent kind={c.kind} sector={c.sector} id={c.id}>{c.name}</Ent>
             <span className="ties-note">{c.note}</span>
             <span className="ties-bar"><i style={{ width: `${(c.v / max) * 100}%` }} /></span>
@@ -70,7 +72,7 @@ function LeanAxis() {
   return (
     <div ref={ref} className="chart">
       {w > 0 ? (
-        <svg className="wipe" width={w} height={h} role="img" aria-label="Voting record position of each senator, Whitcombe at plus 0.38">
+        <svg className="wipe" width={w} height={h} role="img" aria-label={`Voting record position of each senator, Whitcombe at ${LEAN_FOCUS.toFixed(2)}`}>
           <path className="c-axis" d={`M8 50.5H${w - 8}`} />
           <path className="c-tick" d={`M${x(0)} 44V57`} />
           {LEAN.map((d, i) => (
@@ -83,7 +85,7 @@ function LeanAxis() {
             </g>
           ))}
           <path className="c-focus-mark" d={`M${x(LEAN_FOCUS)} 53l5 9h-10z`} />
-          <text className="c-label strong" x={x(LEAN_FOCUS)} y={76} textAnchor="middle">Whitcombe +0.38</text>
+          <text className="c-label strong" x={x(LEAN_FOCUS)} y={76} textAnchor="middle">Whitcombe {LEAN_FOCUS >= 0 ? "+" : ""}{LEAN_FOCUS.toFixed(2)}</text>
           <text className="c-label" x={8} y={92}>Most liberal</text>
           <text className="c-label" x={x(0)} y={92} textAnchor="middle">0</text>
           <text className="c-label" x={w - 8} y={92} textAnchor="end">Most conservative</text>
@@ -94,8 +96,11 @@ function LeanAxis() {
 }
 
 const PARTY = { D: "Democrat", R: "Republican", I: "Independent" };
+const count = (p: string, funded?: boolean) => SEATS.filter((s) => s.party === p && (funded === undefined || s.funded === funded)).length;
+const NUM = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 function Hemicycle() {
+  const links = useLinks("03");
   const rows = [5, 7, 9];
   const radii = [36, 58, 80];
   const pos = rows.flatMap((n, r) =>
@@ -105,12 +110,12 @@ function Hemicycle() {
     }),
   ).sort((p, q) => q.a - p.a);
   return (
-    <svg className="hemi" viewBox="0 0 192 100" role="img" aria-label="Subcommittee seats: 9 Democrat, 1 Independent, 11 Republican. 10 seats received money from this network.">
+    <svg className="hemi" viewBox="0 0 192 100" data-lk={links.root} role="img" aria-label={`Subcommittee seats: ${count("D")} Democrat, ${count("I")} Independent, ${count("R")} Republican. ${SEATS.filter((s) => s.funded).length} seats received money from this network.`}>
       <path className="c-axis" d="M4 96.500H188" />
       {pos.map((p, i) => {
         const s = SEATS[i];
         return (
-          <g key={i} style={{ ["--k" as string]: i }} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
+          <g key={i} style={{ ["--k" as string]: i }} className={`${links.mark([s.id])} seat party-${s.party}${s.focus ? " focus" : ""}`} {...links.on([s.id], s.name)} data-tip-now="" data-tip={`${s.focus ? `${s.name}, chair` : s.name}. ${PARTY[s.party]}${s.funded ? ", took money from this network" : ", no money from this network"}`}>
             {s.funded ? <circle className="seat-ring" cx={p.x} cy={p.y} r="9.6" /> : null}
             <circle className="seat-dot" cx={p.x} cy={p.y} r="6" />
             {s.focus ? <path className="seat-mark" d={`M${p.x - 3} ${p.y}h6M${p.x} ${p.y - 3}v6`} /> : null}
@@ -123,10 +128,10 @@ function Hemicycle() {
 
 function VoteStrip() {
   return (
-    <svg className="votes wipe" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
-      <path className="c-axis" d={`M0 15H${VOTES.length * 6}`} vectorEffect="non-scaling-stroke" />
-      {VOTES.map((v, i) =>
-        <g key={i} style={{ ["--k" as string]: i }} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
+    <svg className="votes wipe" viewBox={`0 0 ${LAST_VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label={`Last ${LAST_VOTES.length} votes, with or against party`}>
+      <path className="c-axis" d={`M0 15H${LAST_VOTES.length * 6}`} vectorEffect="non-scaling-stroke" />
+      {LAST_VOTES.map((v, i) =>
+        <g key={v.id} style={{ ["--k" as string]: i }} data-tip-now="" data-tip={`${v.title}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}`}>
           <rect className="c-hit" x={i * 6} y={0} width={6} height={30} />
           {v.v === 0
             ? <rect className="vote absent" x={i * 6 + 1.5} y={14} width={2} height={2} />
@@ -148,14 +153,14 @@ export function Affiliation() {
         <Hemicycle />
         <div>
           <h4 className="sub-h">Subcommittee on Space Procurement</h4>
-          <p className="seat-count"><PartyChip party="D" /> <b className="num">9</b> <PartyChip party="I" /> <b className="num">1</b> <PartyChip party="R" /> <b className="num">11</b></p>
-          <p className="note">Ringed seats took money from this network: 6 of 11 Republicans, 3 of 9 Democrats and the Independent.</p>
+          <p className="seat-count"><PartyChip party="D" /> <b className="num">{count("D")}</b> <PartyChip party="I" /> <b className="num">{count("I")}</b> <PartyChip party="R" /> <b className="num">{count("R")}</b></p>
+          <p className="note">Ringed seats took money from this network: {count("R", true)} of {count("R")} Republicans, {count("D", true)} of {count("D")} Democrats{count("I") ? (count("I", true) ? ` and ${count("I") === 1 ? "the Independent" : `${count("I", true)} of ${count("I")} Independents`}` : "") : ""}.</p>
         </div>
       </section>
       <section>
-        <h4 className="sub-h">Last 56 votes</h4>
+        <h4 className="sub-h">Last {LAST_VOTES.length} votes</h4>
         <VoteStrip />
-        <p className="note">Marked votes concern S. 2114. She broke with her party on one.</p>
+        <p className="note">Marked votes concern S. 2114. She broke with her party on {NUM[LAST_VOTES.filter((v) => v.key && v.v < 0).length]} of them, and on {NUM[LAST_VOTES.filter((v) => !v.key && v.v < 0).length]} other {LAST_VOTES.filter((v) => !v.key && v.v < 0).length === 1 ? "vote" : "votes"}.</p>
       </section>
     </div>
   );

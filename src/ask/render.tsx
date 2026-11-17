@@ -18,7 +18,9 @@ export interface KeyEntry { title: string; items: KeyItem[]; rank?: number }
 export interface AxisTitle { axis: "x" | "y"; text: string; x: number; y: number; field: string; anchor: "start" | "end" }
 export interface Tick { p: number; label: string }
 // The plot area and its ticks, for the 3D view, which lays its ground out over the same area.
-export interface Frame { x0: number; y0: number; x1: number; y1: number; xt: Tick[]; yt: Tick[]; xBand: boolean; yBand: boolean; map?: { ox: number; oy: number; s: number } }
+export interface Frame { x0: number; y0: number; x1: number; y1: number; xt: Tick[]; yt: Tick[]; xBand: boolean; yBand: boolean; map?: { ox: number; oy: number; s: number }; xd?: [number, number] }
+// Views stacked on a shared axis are laid out with the same x range and the same left margin, so their x positions line up.
+export interface SceneOpts { x?: [number, number]; ml?: number }
 export interface Scene { marks: MarkT[]; links: LinkT[]; chrome: ReactNode; over?: ReactNode; key: KeyEntry[]; titles: AxisTitle[]; height: number; columns?: TableCol[]; rows?: TableRow[]; frame?: Frame }
 export interface TableCol { field: string; label: string; x: number; w: number; num: boolean; type: string }
 export interface TableRow { id: string; y: number; cells: string[] }
@@ -238,7 +240,7 @@ function keyLayout(entries: KeyEntry[], right: number, room: number) {
   return { height: rows.length * KEY_ROW + 6, node };
 }
 
-export function scene(a: Answer, data: Loaded, W: number, H: number, map: MapData | null, scope: string): Scene {
+export function scene(a: Answer, data: Loaded, W: number, H: number, map: MapData | null, scope: string, opts: SceneOpts = {}): Scene {
   const ls: L[] = a.layers.map((l, i) => ({
     l, i,
     rows: l.from ? data.results[l.from]?.rows ?? [] : [{}],
@@ -253,7 +255,7 @@ export function scene(a: Answer, data: Loaded, W: number, H: number, map: MapDat
     return id;
   };
   const srcOf = (r: Record<string, unknown>) => (Array.isArray(r.source_rows) ? r.source_rows.map(String) : undefined);
-  return a.form === "table" ? tableScene(a, ls, W, H, idOf, srcOf) : chartScene(a, ls, W, H, map, idOf, srcOf);
+  return a.form === "table" ? tableScene(a, ls, W, H, idOf, srcOf) : chartScene(a, ls, W, H, map, idOf, srcOf, opts);
 }
 
 function tableScene(a: Answer, ls: L[], W: number, H: number, idOf: (L: L, r: Record<string, unknown>, j: number) => string, srcOf: (r: Record<string, unknown>) => string[] | undefined): Scene {
@@ -296,7 +298,7 @@ function tableScene(a: Answer, ls: L[], W: number, H: number, idOf: (L: L, r: Re
   return { marks, links: [], chrome: kl.node?.(end), key, titles: [], height: Math.max(H, end + kl.height + 8), columns, rows: tableRows };
 }
 
-function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | null, idOf: (L: L, r: Record<string, unknown>, j: number) => string, srcOf: (r: Record<string, unknown>) => string[] | undefined): Scene {
+function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | null, idOf: (L: L, r: Record<string, unknown>, j: number) => string, srcOf: (r: Record<string, unknown>) => string[] | undefined, opts: SceneOpts): Scene {
   const seen = new Map<string, string[]>();
   const colOf = (L: L, f?: string) => L.cols.find((c) => c.name === f);
   const typeOf = (L: L, ch?: Channel): FieldType | null => {
@@ -369,7 +371,7 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
   const callouts = ls.filter((L) => L.l.mark === "text" && !L.l.encoding.x && !L.l.encoding.y);
   const yCats = ky === "nominal" || ky === "ordinal" ? cats("y") : [];
   const xCats = kx === "nominal" || kx === "ordinal" ? cats("x") : [];
-  const ml = placeMode ? 16 : yCats.length ? Math.min(200, 18 + Math.max(...yCats.map((c) => textW(c)))) : ky ? 58 : 16;
+  const ml = Math.max(opts.ml ?? 0, placeMode ? 16 : yCats.length ? Math.min(200, 18 + Math.max(...yCats.map((c) => textW(c)))) : ky ? 58 : 16);
   // The key's height is worked out before the marks are placed. Tokens are assigned in a throwaway map here, since the
   // real assignment follows the order in which the marks take them.
   const keyH = keyLayout(keyEntries(a, ls, new Map()), W - 22, W * 0.62).height;
@@ -400,6 +402,7 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
     const f = L?.l.encoding[ax]?.field ?? "";
     return fmtValue(a, f, v);
   };
+  let xd: [number, number] | undefined;
   const makeScale = (ax: Ax, kind: FieldType | null, a0: number, a1: number): Scale | null => {
     if (!kind) return null;
     if (kind === "nominal" || kind === "ordinal") return band(ax === "x" ? xCats : yCats, Math.min(a0, a1), Math.max(a0, a1));
@@ -407,6 +410,8 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
     if (!vs.length) return null;
     let lo = Math.min(...vs), hi = Math.max(...vs);
     if (hasZero(ax)) { lo = Math.min(0, lo); hi = Math.max(0, hi); }
+    if (ax === "x" && opts.x) [lo, hi] = opts.x;
+    if (ax === "x") xd = [lo, hi];
     if (kind === "temporal") return time(lo, hi, a0, a1, Math.abs(a1 - a0));
     const b = binOf(ax);
     if (b) {
@@ -635,7 +640,7 @@ function chartScene(a: Answer, ls: L[], W: number, H: number, map: MapData | nul
   const key = keyEntries(a, ls, seen);
   chrome.push(keyLayout(key, W - 22, W * 0.62).node?.(6));
   const inX = (t: Tick) => t.p >= X0 - 1 && t.p <= X1 + 1, inY = (t: Tick) => t.p >= Y0 - 1 && t.p <= Y1 + 1;
-  const frame: Frame = { x0: X0, y0: Y0, x1: X1, y1: Y1, xt: sx?.ticks.filter(inX) ?? [], yt: sy?.ticks.filter(inY) ?? [], xBand: sx?.kind === "band", yBand: sy?.kind === "band", map: mapT };
+  const frame: Frame = { x0: X0, y0: Y0, x1: X1, y1: Y1, xt: sx?.ticks.filter(inX) ?? [], yt: sy?.ticks.filter(inY) ?? [], xBand: sx?.kind === "band", yBand: sy?.kind === "band", map: mapT, xd };
   return { marks, links, chrome, over, key, titles, height: H, frame };
 }
 

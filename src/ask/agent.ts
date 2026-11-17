@@ -1,5 +1,5 @@
 import { entityInText } from "./entities.js";
-import { ENTITIES } from "./data.js";
+import { ENTITIES } from "../tables.js";
 import type { Answer, Layer } from "./spec";
 
 // A scripted stand-in for the agent. It writes answers in the same format a model would, from a fixed set of
@@ -12,7 +12,7 @@ interface Step { id: string; label: string; re: RegExp; ok: (c: Context) => bool
 interface GiftState { recipients: string[]; aero: boolean; layout: "bars" | "time" | "map"; votes: boolean; through2025?: boolean }
 const giftState = (a: Answer | null): GiftState | null => (a?.notes?.gifts as GiftState | undefined) ?? null;
 
-function giftAnswer(question: string, s: GiftState): Answer {
+export function giftAnswer(question: string, s: GiftState): Answer {
   const group = s.aero ? "donor_group" : "sector";
   const both = s.recipients.length > 1;
   const where = [
@@ -71,20 +71,20 @@ function ageAnswer(question: string, op: ">=" | "<", age: number): Answer {
   };
 }
 
-const CLIENT_TONES = { "Halvorsen Aerodyne": "accent", "Meridian Orbital": "t1", "Tessaly Systems": "t3", "Northgate Capital": "t6" };
+export const CLIENT_TONES = { "Halvorsen Aerodyne": "accent", "Meridian Orbital": "t1", "Tessaly Systems": "t3", "Northgate Capital": "t6" };
 const SPEND_WHERE = "quarter >= DATE '2022-01-01'";
-function spendAnswer(question: string): Answer {
+export function spendAnswer(question: string, from = "2022-01-01"): Answer {
   return {
     question,
     title: "Lobbying spend by client and quarter",
     tables: {
-      spend: { key: "key", sql: `SELECT client || ' ' || strftime(quarter, '%Y-%m') AS key, client, quarter, sum(amount) AS amount, list(id) AS source_rows\nFROM filings\nWHERE ${SPEND_WHERE}\nGROUP BY client, quarter\nORDER BY quarter, client` },
+      spend: { key: "key", sql: `SELECT client || ' ' || strftime(quarter, '%Y-%m') AS key, client, quarter, sum(amount) AS amount, list(id) AS source_rows\nFROM filings\nWHERE quarter >= DATE '${from}'\nGROUP BY client, quarter\nORDER BY quarter, client` },
     },
     layers: [{ from: "spend", mark: "span", adjust: "stack", encoding: { x: { field: "quarter" }, y: { field: "amount" }, tone: { field: "client", map: CLIENT_TONES } } }],
     unit: ["filing", "filings"],
   };
 }
-function filingAnswer(question: string, cur: Answer | null): Answer {
+export function filingAnswer(question: string, cur: Answer | null): Answer {
   const where = cur?.tables.spend?.sql.match(/WHERE ([^\n]+)/)?.[1] ?? SPEND_WHERE;
   return {
     question,
@@ -95,7 +95,7 @@ function filingAnswer(question: string, cur: Answer | null): Answer {
   };
 }
 
-function summitAnswer(question: string): Answer {
+export function summitAnswer(question: string): Answer {
   return {
     question,
     title: "Who attended each session of the Aerospace Futures Summit",
@@ -126,7 +126,7 @@ const SIM_SQL = `WITH draws AS (
 )
 SELECT id, margin, CASE WHEN margin > 0 THEN 'Halvorsen' ELSE 'Meridian' END AS winner, 'simulated' AS certainty
 FROM runs`;
-function simAnswer(question: string, weight: number): Answer {
+export function simAnswer(question: string, weight: number): Answer {
   return {
     question,
     title: "Simulated margin of the source selection",
@@ -152,7 +152,7 @@ function simAnswer(question: string, weight: number): Answer {
 const LANES = ["Whitcombe", "Calder", "Voss", "Tolliver", "Office of Orbital Logistics", "Halvorsen Aerodyne"];
 const KIND_SHAPE = { vote: "diamond", award: "diamond", document: "square", filing: "square", gift: "square", statement: "ring", meeting: "dot" };
 const KIND_TONE = { vote: "t1", award: "t1", document: "t3", filing: "t3", gift: "accent", statement: "t4", meeting: "accent" };
-function timelineAnswer(question: string): Answer {
+export function timelineAnswer(question: string): Answer {
   const lanes = LANES.map((l) => `'${l}'`).join(", ");
   return {
     question,
@@ -173,9 +173,9 @@ function timelineAnswer(question: string): Answer {
   };
 }
 
-const ALL_TIES = ["money", "lobby", "employ", "contact", "board", "attend"];
+export const ALL_TIES = ["money", "lobby", "employ", "contact", "board", "attend"];
 const TIE_TONE = { money: "accent", lobby: "t3", employ: "t6", contact: "t1", board: "t2", attend: "t6" };
-function networkAnswer(question: string, types: string[], center = "Dana Whitcombe"): Answer {
+export function networkAnswer(question: string, types: string[], center = "Dana Whitcombe"): Answer {
   return {
     question,
     title: types.length === 1 && types[0] === "money" ? `Money within two steps of ${center.split(" ").pop()}` : `Who is within two steps of ${center.split(" ").pop()}`,

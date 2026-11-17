@@ -1,4 +1,4 @@
-# Test questions for the Ask page
+# Test questions for asking about the case
 
 Drafted by a model given the case and its record types, and told nothing about the views the page can draw. All names and facts are invented.
 

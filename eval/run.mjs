@@ -1,4 +1,4 @@
-// Asks the questions in questions.json through the Ask page, once per model, and writes each answer to
+// Asks the questions in questions.json through the question box beside the case board, once per model, and writes each answer to
 // runs/<name>/results.jsonl. Needs `npm run dev` running with OPENROUTER_API_KEY in .env.local.
 //   node eval/run.mjs [model ...]        models run in parallel; the default is the page's default model
 //   OUT=eval/runs/name SEQ=2 REASONING='{"effort":"medium"}' node eval/run.mjs openai/gpt-6-luna
@@ -20,14 +20,17 @@ const ok_ = (info, qi) => info.asks === qi + 1 && !info.note;
 
 async function runSeq(model, si) {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  await ctx.addInitScript(([m, rz, pw]) => { if (m) localStorage.setItem("ask-model", m); if (rz) localStorage.setItem("ask-reasoning", rz); if (pw) localStorage.setItem("ask-password", pw); }, [model, process.env.REASONING ?? "", PASSWORD]);
+  await ctx.addInitScript(([m, rz, pw]) => { if (m) localStorage.setItem("ask-model", m); if (rz) localStorage.setItem("ask-reasoning", rz); if (pw) localStorage.setItem("ask-password", pw); localStorage.setItem("ask-script", "off"); localStorage.removeItem("fui01-answers-1"); }, [model, process.env.REASONING ?? "", PASSWORD]);
   const page = await ctx.newPage();
-  await page.goto("http://127.0.0.1:5183/#vellum/ask", { waitUntil: "networkidle" });
+  await page.goto("http://127.0.0.1:5183/#vellum", { waitUntil: "networkidle" });
   await page.waitForTimeout(800);
   for (const [qi, q] of ALL[si].entries()) {
     const before = await page.evaluate(() => (window.__askLog ?? []).length);
     const t0 = Date.now();
-    await page.fill(".ask-bar input", q);
+    // A follow-up names the answer before it as its scope, as the ask button on that answer does.
+    if (qi > 0 && await page.locator(".ans-card.focus .panel-ask").count()) await page.locator(".ans-card.focus .panel-ask").first().click();
+    else await page.click(".ans-input");
+    await page.keyboard.type(q);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(400);
     try { await page.waitForFunction(() => !document.querySelector(".ask-status"), null, { timeout: 150_000 }); } catch { /* timed out */ }
@@ -35,10 +38,10 @@ async function runSeq(model, si) {
     await page.waitForTimeout(1300);
     const info = await page.evaluate((b) => ({
       log: (window.__askLog ?? []).slice(b),
-      title: document.querySelector(".ask-title h2")?.textContent ?? "",
-      note: [...document.querySelectorAll(".ask-foot .note")].map((n) => n.textContent).join(" "),
-      asks: document.querySelectorAll(".ask-tree circle.k-ask").length,
-      marks: document.querySelectorAll(".ask-marks [data-id]").length,
+      title: document.querySelector(".ans-card.focus .ans-title")?.textContent ?? "",
+      note: document.querySelector(".ans-note")?.textContent ?? "",
+      asks: document.querySelectorAll(".ans-card").length,
+      marks: document.querySelectorAll(".ans-card.focus .ask-marks [data-id]").length,
     }), before);
     // The answer the model showed last, and what its tables hold. The page's views still hold the answer's tables.
     const lastShow = [...info.log].reverse().flatMap((e) => e.message?.tool_calls ?? []).find((c) => c.function.name === "show");

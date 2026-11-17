@@ -3,7 +3,7 @@ import mvpWasm from "@duckdb/duckdb-wasm/dist/duckdb-mvp.wasm?url";
 import mvpWorker from "@duckdb/duckdb-wasm/dist/duckdb-browser-mvp.worker.js?url";
 import ehWasm from "@duckdb/duckdb-wasm/dist/duckdb-eh.wasm?url";
 import ehWorker from "@duckdb/duckdb-wasm/dist/duckdb-browser-eh.worker.js?url";
-import { TABLES } from "./data";
+import { TABLES } from "../tables";
 
 export type ColType = "quantitative" | "temporal" | "nominal" | "boolean" | "list";
 export interface Column { name: string; type: ColType }

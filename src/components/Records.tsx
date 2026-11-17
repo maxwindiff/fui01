@@ -1,9 +1,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { DOCS, entity, FILINGS, filingDetail, PRIOR_CONTACTS, WINDOW_CONTACTS, fmtMoney } from "../data";
+import { DOCS, entity, FILINGS, filingDetail, PRIOR_CONTACTS, REPORT_FILING, WINDOW_CALENDAR, WINDOW_CONTACTS, WINDOW_TEXT, fmtMoney } from "../data";
 import type { Filing } from "../data";
 import { useCommand, useWs, ws } from "../workspace";
 import { Ent, Fold, useFlip } from "./primitives";
+import { board } from "../ask/board";
+import { useLinks } from "../links";
 
 type SortKey = "q" | "reg" | "lob" | "amt";
 const COLUMNS: { key?: SortKey; label: string; r?: boolean; first: 1 | -1 }[] = [
@@ -18,7 +20,7 @@ function FilingDetail({ f }: { f: Filing }) {
   const brief = useWs((s) => s.brief);
   const d = filingDetail(f);
   const max = Math.max(...d.series.map((g) => g.amt));
-  const item = `Filing ${f.id}`;
+  const item = `Filing ${f.code}`;
   const inBrief = brief.includes(item);
   return (
     <div className="gt-detail">
@@ -36,7 +38,7 @@ function FilingDetail({ f }: { f: Filing }) {
       </section>
       <section>
         <h4 className="sub-h">Client and issues</h4>
-        <p><Ent kind="corp" sector="corp" id={f.client === "Meridian Orbital" ? "meridian" : "halvorsen"}>{f.client}</Ent></p>
+        <p><Ent kind="corp" sector="corp" id={f.client.split(" ")[0].toLowerCase()}>{f.client}</Ent></p>
         <ul className="issue-list">
           {d.issues.map((i) => <li key={i.code}><span className="codes">{i.code}</span>{i.name}</li>)}
         </ul>
@@ -53,7 +55,7 @@ function FilingDetail({ f }: { f: Filing }) {
         <div className="actions">
           <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} data-note="commit" onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
           <button type="button" className="btn" onClick={() => ws.inspect(f.regId)}>Open registrant</button>
-          {f.id === "LD2-84672" ? <button type="button" className="btn" onClick={() => ws.openDoc("F-84672")}>Read the report</button> : null}
+          {DOCS.find((d) => d.filing === f.id) ? <button type="button" className="btn" onClick={() => ws.openDoc(DOCS.find((d) => d.filing === f.id)!.id)}>Read the report</button> : null}
         </div>
       </section>
     </div>
@@ -80,10 +82,11 @@ export function FilingsTable() {
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  useCommand("filing", (id) => setOpen((s) => new Set(s).add(id ?? "LD2-84672")));
+  useCommand("filing", (id) => setOpen((s) => new Set(s).add(id ?? REPORT_FILING.id)));
+  const links = useLinks("10");
 
   return (
-    <div className="gtable" role="table" aria-label="Lobbying filings" ref={ref}>
+    <div className="gtable" role="table" aria-label="Lobbying filings" ref={ref} data-lk={links.root}>
       <div className="gt-head" role="row">
         <span role="columnheader" aria-hidden="true" />
         {COLUMNS.map((c) => (
@@ -101,10 +104,13 @@ export function FilingsTable() {
       {rows.map((f) => {
         const isOpen = open.has(f.id);
         return (
-          <div key={f.id} className={`gt-item${f.focus ? " sel" : ""}`} style={{ ["--k" as string]: FILINGS.indexOf(f) * 2 }} data-flip={f.id} data-open={isOpen}>
+          <div
+            key={f.id} className={`${links.mark([f.id])} gt-item${f.focus ? " sel" : ""}`} style={{ ["--k" as string]: FILINGS.indexOf(f) * 2 }} data-flip={f.id} data-open={isOpen}
+            onPointerEnter={() => board.hover({ ids: [f.id], from: "mark", at: "10" })} onPointerLeave={() => board.hover(null)}
+          >
             <div
               className="gt-row" role="row" tabIndex={0} aria-expanded={isOpen}
-              onClick={() => toggle(f.id)}
+              onClick={() => { toggle(f.id); if (!isOpen) board.select({ ids: [f.id], label: `${f.reg} for ${f.client}, ${f.q}`, from: "10" }); }}
               onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(f.id); } }}
             >
               <span role="cell" data-note="row"><i className="chev" aria-hidden="true" /></span>
@@ -118,7 +124,7 @@ export function FilingsTable() {
               </span>
               <span role="cell" className="r num strong">{fmtMoney(f.amt)}</span>
               <span role="cell" className="bar-col"><span className="cell-bar"><i style={{ width: `${(f.amt / max) * 100}%` }} /></span></span>
-              <span role="cell" className="r num dim">{f.id}</span>
+              <span role="cell" className="r num dim">{f.code}</span>
             </div>
             <Fold open={isOpen}><FilingDetail f={f} /></Fold>
           </div>
@@ -219,10 +225,13 @@ export function DocViewer() {
 export function DocList() {
   const current = useWs((s) => s.doc);
   const [open, setOpen] = useState<string | null>(null);
+  const links = useLinks("13");
   return (
-    <ul className="doclist">
+    <ul className="doclist" data-lk={links.root}>
       {DOCS.map((d) => (
-        <li key={d.id} className={d.id === current ? "sel" : ""} style={{ ["--k" as string]: DOCS.indexOf(d) * 2 }} data-open={open === d.id}>
+        <li
+          key={d.id} className={`${links.mark([d.id])}${d.id === current ? " sel" : ""}`}
+          onPointerEnter={() => board.hover({ ids: [d.id], from: "mark", at: "13" })} onPointerLeave={() => board.hover(null)} style={{ ["--k" as string]: DOCS.indexOf(d) * 2 }} data-open={open === d.id}>
           <button type="button" className="doc-row" aria-expanded={open === d.id} onClick={() => setOpen(open === d.id ? null : d.id)}>
             <span className="doctype">{d.type}</span>
             <span className="doc-title">{d.title}</span>
@@ -252,9 +261,9 @@ export function DocList() {
 
 const EVIDENCE = [
   { id: "E-0212", label: "E-0212 Email", doc: "E-0212", line: "Voss asks that the weighting stay as drafted, 14 Oct 2025" },
-  { id: "F-84672", label: "F-84672 Filing", doc: "F-84672", line: "Nine lobbyists and $2.31M reported for the quarter" },
+  { id: "F-84672", label: "F-84672 Filing", doc: "F-84672", line: `${REPORT_FILING.lob} lobbyists and ${fmtMoney(REPORT_FILING.amt)} reported for the quarter` },
   { id: "C-0031", label: "C-0031 Amendment 3", doc: "C-0031", line: "Weighting unchanged at 35 percent, 23 Oct 2025" },
-  { id: "CAL", label: "Office calendar, 11 entries", line: "Meetings logged by the Office between 8 Aug and 6 Nov 2025" },
+  { id: "CAL", label: `Office calendar, ${WINDOW_CALENDAR} entries`, line: `Meetings logged by the Senator's office and subcommittee staff between ${WINDOW_TEXT}` },
 ];
 
 export function Finding() {
@@ -272,7 +281,7 @@ export function Finding() {
       <Fold open={!dismissed}>
         <h3 className="finding-t">Contacts with the procurement office rose sharply in the 90 days before the award.</h3>
         <p className="finding-p">
-          Voss and her colleagues reached the Office of Orbital Logistics or the Senator's office {WINDOW_CONTACTS} times between 8 Aug and 6 Nov 2025,
+          Lobbyists and Halvorsen executives logged {WINDOW_CONTACTS} contacts with public offices between {WINDOW_TEXT},
           against {PRIOR_CONTACTS} in the 90 days before that. The weighting she asked for appears unchanged in Amendment 3.
         </p>
         <div className="conf">

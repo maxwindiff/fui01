@@ -1,4 +1,4 @@
-import { TABLES } from "./data";
+import { TABLES } from "../tables";
 import { query } from "./db";
 import type { Loaded } from "./run";
 import { human, labelOf } from "./spec";

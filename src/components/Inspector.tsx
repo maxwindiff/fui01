@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { board } from "../ask/board";
 import { dossier, entity } from "../data";
 import { useWorkspace } from "../workspace";
 import { Ent, Glyph, PartyChip } from "./primitives";
@@ -39,7 +40,7 @@ export function Inspector() {
           <div className="actions">
             <button type="button" className={`btn${inBrief ? " done" : " primary"}`} aria-pressed={inBrief} data-note="commit" onClick={() => ws.toggleBrief(item)}>{inBrief ? "In brief" : "Add to brief"}</button>
             <button type="button" className="btn" onClick={() => ws.reveal("01")}>Show in network</button>
-            <button type="button" className="btn" data-tip="Opens the Ask page with this question filled in" onClick={() => ws.askAbout(`Who is ${d.e.name} connected to?`)}>Ask about them</button>
+            <button type="button" className="btn" onClick={() => board.insert(["Who is ", { kind: "set", label: d.e.name, set: { ids: [d.e.id] } }, "connected to?"])}>Ask about them</button>
           </div>
           {d.groups.map((g) => (
             <section key={g.key}>

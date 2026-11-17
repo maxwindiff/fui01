@@ -165,7 +165,12 @@ const STOREYS = [2, 18, 36, 56, 78];
 
 const lerpRgb = (a: RGBA, b: RGBA, k: number): RGBA => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k, 1];
 
-export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
+// How the page's selection, lenses and hovered records show on the map: an alpha for each state and each arc, 0 for
+// those a lens hides.
+export interface MapEmph { state: Float32Array; arc: Float32Array }
+
+export function buildMapBuffers(model: MapModel, theme: Theme, hover: number, emph: MapEmph | null = null) {
+  const sa = (state: number) => (emph ? emph.state[state] : 1);
   const m = theme.gpu.map;
   const form = theme.gpu.deep?.form;
   const blk = form === "blocks" ? theme.gpu.block : undefined;
@@ -195,20 +200,21 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
   const dots = new Float32Array((m.dot.alpha > 0 && !blk ? model.dots.length : 0) * MARK_FLOATS);
   const stem = rgba(m.dot.color, 0.1);
   if (dots.length) model.dots.forEach((d, i) => {
+    if (!sa(d.state)) return;
     const v = share(d.state);
     const lit = hover === d.state;
     const delay = Math.min(1, (d.x / MAP_W) * 0.6 + 0.1);
     if (form === "relief") {
       const hn = sample(model.field, d.x, d.y);
       const light = rim(model.field, d.x, d.y) * Math.min(1, hn * 4) * 2.4;
-      const a = Math.min(1, 0.16 + 0.5 * Math.pow(hn, 0.7) + 0.6 * light) * (hover >= 0 && !lit ? 0.55 : 1);
+      const a = Math.min(1, 0.16 + 0.5 * Math.pow(hn, 0.7) + 0.6 * light) * (hover >= 0 && !lit ? 0.55 : 1) * sa(d.state);
       const r = m.dot.min + (m.dot.max - m.dot.min) * Math.min(1, 0.5 * hn + 0.6 * light);
       writeMark(dots, dotCount++, d.x, d.y, hn * RELIEF, lit ? r + 0.4 : r, m.dot.shape, [dotC[0], dotC[1], dotC[2], dotC[3] * a], 0, 1, 0, 1, delay);
       return;
     }
     const j = m.dot.jitter ? 1 - m.dot.jitter + Math.pow(rand(), 2.2) * m.dot.jitter * 2.2 : 1;
     const r = (m.dot.min + (m.dot.max - m.dot.min) * v) * Math.min(1.25, j);
-    const a = (0.3 + 0.7 * v) * Math.min(1, 0.35 + j * 0.65) * (hover >= 0 && !lit ? 0.5 : 1);
+    const a = (0.3 + 0.7 * v) * Math.min(1, 0.35 + j * 0.65) * (hover >= 0 && !lit ? 0.5 : 1) * sa(d.state);
     const z = plateau(d.state) * (0.9 + 0.1 * j);
     writeMark(dots, dotCount++, d.x, d.y, z, lit ? r + 0.5 : r, m.dot.shape, [dotC[0], dotC[1], dotC[2], Math.min(1, dotC[3] * a)], 0, 1, m.dot.halo * v * Math.max(0, j - 0.7), 1, delay);
     if (form === "armillary" && z > 6 && i % 2 === 0) lines.line([d.x, d.y, 0], [d.x, d.y, z], { color: stem, width: 0.8, delay });
@@ -229,7 +235,7 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
       return k < 0 ? -1 : plateau(model.cells[k].state);
     };
     for (const c of model.cells) {
-      if (c.col % stride || c.row % stride) continue;
+      if (c.col % stride || c.row % stride || !sa(c.state)) continue;
       const h = plateau(c.state);
       const v = share(c.state);
       let top: RGBA;
@@ -239,6 +245,7 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
         const t = v * (ramp.length - 1), k = Math.min(ramp.length - 2, Math.floor(t));
         top = lerpRgb(ramp[k], ramp[k + 1], t - k);
       }
+      if (sa(c.state) < 1) top = lerpRgb(top, rgba(theme.gpu.vizBg), 0.75);
       const side = blk.paint === "sector" ? lerpRgb(top, rgba(theme.gpu.vizBg), 0.3) : hover === c.state ? top : rgba(blk.side);
       // A taller block toward the sun puts this top in shade.
       let dark = 0;
@@ -266,9 +273,9 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
   if (form === "dome") {
     for (const o of model.outlines) {
       const h = plateau(o.state);
-      if (!h) continue;
+      if (!h || !sa(o.state)) continue;
       const lit = hover === o.state;
-      const k = hover >= 0 && !lit ? 0.4 : 1;
+      const k = (hover >= 0 && !lit ? 0.4 : 1) * sa(o.state);
       const top = lit ? rgba(m.arc.color) : rgba(m.border.color, (0.5 + 0.5 * share(o.state)) * k);
       const strut = rgba(m.border.color, 0.3 * k);
       const delay = Math.min(1, 0.25 + (o.ring[0][0] / MAP_W) * 0.5);
@@ -284,7 +291,7 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
   if (form === "strata") {
     const ink = rgba(m.border.color, 0.9);
     model.states.forEach((st, i) => {
-      if (st.value < 60 || !st.cx) return;
+      if (st.value < 60 || !st.cx || !sa(i)) return;
       spikes.push(i);
       lines.line([st.cx, st.cy, 0], [st.cx, st.cy, spikeHeight(model, i)], { color: ink, width: 1.5, delay: 0.5 + (st.cx / MAP_W) * 0.3 });
     });
@@ -300,9 +307,11 @@ export function buildMapBuffers(model: MapModel, theme: Theme, hover: number) {
   const maxFlow = Math.max(...MAP_FLOWS.map((f) => f.v));
   const rise = form ? 0.3 : 0;
   MAP_FLOWS.forEach((f, i) => {
+    const fa = emph ? emph.arc[i] : 1;
+    if (!fa) return;
     const a = model.cities[f.s], b = model.cities[f.t];
     const bend = (b.x > a.x ? -1 : 1) * (0.16 + (i % 3) * 0.04);
-    const s: Stroke = { color: arcC, width: m.arc.width * (0.5 + 1.1 * Math.sqrt(f.v / maxFlow)), phase: (i * 0.37) % 1, delay: 0.55 + i * 0.03 };
+    const s: Stroke = { color: [arcC[0], arcC[1], arcC[2], arcC[3] * fa], width: m.arc.width * (0.5 + 1.1 * Math.sqrt(f.v / maxFlow)), phase: (i * 0.37) % 1, delay: 0.55 + i * 0.03 };
     if (m.arc.mode === "pulse") { s.flow = 0.22; s.pulse = 1.5; } else { s.dash = 8; s.flow = 0.9; }
     if (form === "strata" || form === "armillary") lines.curve([a.x, a.y, 0], [b.x, b.y, 0], bend, 0, { color: rgba(m.border.color, 0.16), width: 1, delay: s.delay }, 40);
     arcs.curve([a.x, a.y, cityZ[f.s]], [b.x, b.y, cityZ[f.t]], bend, rise, s, 40);

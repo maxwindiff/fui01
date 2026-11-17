@@ -6,6 +6,7 @@ import { motion } from "../motion";
 import { tip } from "../tip";
 import { useWs, ws } from "../workspace";
 import { PanelIcon } from "../icons";
+import { board, useBoard } from "../ask/board";
 
 export function useSize<T extends HTMLElement>() {
   const ref = useRef<T>(null);
@@ -139,11 +140,12 @@ function watch(el: Element, fn: Seen) {
 // A panel renders at its place on the board, on the stage, or as a tile in the rail beside the stage.
 // Its entry plays when it first comes into view ("frame") and again when it goes onto the stage ("content").
 export function Panel({
-  fig, title, meta, glance, ask, span = 12, children, flush,
+  fig, title, meta, glance, ask, data, children, flush,
 }: {
-  fig: string; title: string; meta?: ReactNode; glance?: ReactNode; ask?: string; span?: number; children: ReactNode; flush?: boolean;
+  fig: string; title: string; meta?: ReactNode; glance?: ReactNode; ask?: string; data?: () => void; children: ReactNode; flush?: boolean;
 }) {
   const staged = useWs((s) => s.stage === fig);
+  const focused = useBoard((s) => s.ctx.includes(fig));
   const tile = useWs((s) => s.stage !== null && s.stage !== fig);
   const replays = useWs((s) => s.replays);
   const el = useRef<HTMLElement>(null);
@@ -205,12 +207,11 @@ export function Panel({
   }, [tile, staged, replays, fig, arm, onscreen]);
 
   const ctx = useMemo(() => ({ staged, plays }), [staged, plays]);
-  // In a tight board the wide panel of a pair gives up a column and the narrow one gains it.
-  const tight = span === 8 ? 7 : span === 4 ? 5 : span < 12 ? 6 : 12;
-  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: order } as CSSProperties;
+  const style = { viewTransitionName: `panel-${fig}`, ["--i"]: order } as CSSProperties;
   return (
+    <>
     <section
-      ref={el} className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style}
+      ref={el} className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}${focused ? " focus" : ""}`} data-panel={fig} style={style}
       data-enter={enter ?? undefined} data-pending={pending && !enter ? "" : undefined}
       onClick={tile ? () => ws.setStage(fig) : undefined}
     >
@@ -218,9 +219,14 @@ export function Panel({
         <PanelIcon fig={fig} />
         <h2 className="panel-title" data-note={tile ? undefined : "entry"}>{title}</h2>
         {meta && !tile ? <span className="panel-meta">{meta}</span> : null}
-        {ask && !tile ? (
-          <button type="button" className="panel-ask" aria-label={`Ask: ${ask}`} data-tip="Ask about this on the Ask page" onClick={(e) => { e.stopPropagation(); ws.askAbout(ask); }}>
+        {!tile ? (
+          <button type="button" className="panel-ask" aria-label={`Ask about ${title}`} data-tip="Ask about this" onClick={(e) => { e.stopPropagation(); tip.hide(); board.insert(ask ? [{ kind: "panel", id: fig }, ask] : [{ kind: "panel", id: fig }], ask); }}>
             <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M3 4.5 6.5 7.5 3 10.5M7.5 11h4" /></svg>
+          </button>
+        ) : null}
+        {!tile && data ? (
+          <button type="button" className="panel-ask" aria-label={`Show the data behind ${title}`} data-tip="Show the data" onClick={(e) => { e.stopPropagation(); tip.hide(); data(); }}>
+            <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M2 3.5h10M2 7h10M2 10.5h10M5.5 3.5v7" /></svg>
           </button>
         ) : null}
         <button
@@ -239,6 +245,8 @@ export function Panel({
       </PanelCtx.Provider>
       <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
     </section>
+    {tile ? null : <div className="ans-slot" data-slot={fig} />}
+    </>
   );
 }
 

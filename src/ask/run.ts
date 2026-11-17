@@ -1,6 +1,6 @@
 import { exec, query } from "./db";
 import type { Column, Result } from "./db";
-import { TABLES } from "./data";
+import { TABLES } from "../tables";
 import { findFilters } from "./filters";
 import type { Filter } from "./filters";
 import { check } from "./spec";
