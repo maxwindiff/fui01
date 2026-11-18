@@ -1,0 +1,684 @@
+86030edf2940fc6ac669b5b8002c5b021fa1a031
+Max Ng
+2026-11-17 08:21:42 -0800
+Float the inspector, let the search dim or hide, and drop mark lenses
+
+The inspector opens over the answers instead of narrowing the page.
+Lenses dim or hide the rest, and the records found by a search can do
+the same before they are kept. The version stepper follows the question.
+The network loses its 5,000 and 100,000 node demo graphs.
+
+Claude-Session: https://claude.ai/code/session_01Af3daEWcwnK2adxHHA5PiS
+
+
+diff --git a/README.md b/README.md
+index f782cf3..a3bd89a 100644
+--- a/README.md
++++ b/README.md
+@@ -14,7 +14,7 @@ Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for examp
+ 
+ The page has a toolbar, the case panels on the left, and answers to questions about them on the right. Both columns are drawn from the case tables in `src/tables.ts`. `src/data.ts` works out what each case panel shows, and `src/ask/sources.ts` writes the same data as SQL over the tables, one set of queries per panel. A question asked about a panel gets the panel's rows as context, and the table button on a panel opens its data as an answer.
+ 
+-Selecting a mark anywhere marks the same records, and the entities they involve, in every panel and answer. The toolbar shows the selection beside a search field, which selects the records whose text matches. Keep turns the selection into a lens, a named set of records that stays on the page. A lens marks its records, dims everything else, or hides everything else. Hiding takes the other rows out of answers before they are laid out, so their axes fit what is left.
++Selecting a mark anywhere marks the same records, and the entities they involve, in every panel and answer. The toolbar shows the selection beside a search field, which selects the records whose text matches. Keep turns the selection into a lens, a named set of records that stays on the page. A lens either dims or hides every other record, and the records found by a search can do the same before they are kept. Hiding takes the other rows out of answers before they are laid out, so their axes fit what is left.
+ 
+ A question is text with scopes in it. A scope is a panel, an answer, the selection or a lens. The ask button on a panel or an answer puts it in the question box, and so do a click on a chip in the toolbar, dragging the chip, the + button, and typing @ (`/` focuses the box). The question is about the first panel or answer it names, or about the whole case when it names none.
+ 
+@@ -36,7 +36,7 @@ Each kind of content is drawn with the lightest technology that can carry its ma
+ 
+ - **DOM** draws text, tables, documents and controls.
+ - **SVG** draws the charts, which have up to a few thousand marks.
+-- **WebGPU**, through [vgpu](https://vgpu.sh), draws the network and the map, where mark counts go into the hundreds of thousands.
++- **WebGPU**, through [vgpu](https://vgpu.sh), draws the network and the map, which need lighting, depth and camera moves that SVG cannot do at speed.
+ 
+ A theme is an object in `src/themes.ts`. When the theme changes, `App.tsx` copies its `vars` onto the root element as CSS custom properties and sets `data-family` to the theme id. The DOM and the SVG charts read colours, type and stroke weights from those properties, and `src/styles/base.css` has a block of rules per family for everything the properties cannot express.
+ 
+diff --git a/src/App.tsx b/src/App.tsx
+index f3eee63..c3064bc 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -69,10 +69,9 @@ function DocGlance() {
+ // The case panels on the left, and answers to questions about them on the right.
+ function Frame({ children, aside }: { children: ReactNode; aside: ReactNode }) {
+   const stage = useWs((s) => s.stage);
+-  const inspecting = useWs((s) => s.trail.length > 0);
+   const layout = useBoard((s) => s.layout);
+   return (
+-    <div className="shell" data-inspect={inspecting ? "" : undefined}>
++    <div className="shell">
+       <div className="case" data-layout={layout}>
+         <Scopes />
+         <main className="board" data-stage={stage ?? undefined}>{children}</main>
+diff --git a/src/ask/Answers.tsx b/src/ask/Answers.tsx
+index facf16c..6c77ae1 100644
+--- a/src/ask/Answers.tsx
++++ b/src/ask/Answers.tsx
+@@ -32,7 +32,7 @@ import type { Loaded } from "./run";
+ import { isScope, partsText, scopeIds, scopeLabel } from "./scope";
+ import { sourceFor } from "./sources";
+ import type { Answer } from "./spec";
+-import { answerOf, board, getBoard, useBoard } from "./board";
++import { answerOf, board, FIND, getBoard, useBoard, useLenses } from "./board";
+ import type { Busy, Card, Layout, Part, Ref } from "./board";
+ 
+ const PAINT_TONES = [["ink", "--ink-2"], ["accent", "--accent"], ["t1", "--t1"], ["t2", "--t2"], ["t3", "--t3"], ["t4", "--t4"], ["t5", "--t5"], ["t6", "--t6"]] as const;
+@@ -131,7 +131,7 @@ function hideRows(a: Answer, data: Loaded, L: OnLens[]): Loaded {
+   return { ...data, results };
+ }
+ function useHidden(answers: Answer[], data: Loaded[] | null) {
+-  const lenses = useBoard((s) => s.lenses);
++  const lenses = useLenses();
+   return useMemo(() => {
+     if (!data) return null;
+     const L = onLenses(lenses);
+@@ -156,7 +156,7 @@ function SceneView({ card, a, data, sc, look, deep, onLeft, onSort }: { card: Ca
+   const links = useRef<SVGGElement>(null);
+   const engine = useRef<Engine | null>(null);
+   const sel = useBoard((s) => s.sel);
+-  const lenses = useBoard((s) => s.lenses);
++  const lenses = useLenses();
+   const hover = useBoard((s) => s.hover);
+   const recs = useMemo(() => sc.marks.map((m) => markRecords(m, a.layers[m.layer].from ? a.tables[a.layers[m.layer].from!]?.key : undefined)), [sc, a]);
+ 
+@@ -173,11 +173,13 @@ function SceneView({ card, a, data, sc, look, deep, onLeft, onSort }: { card: Ca
+     let keep: Set<string> | null = null;
+     lenses.forEach((l, i) => {
+       const hit = l.on && l.mode !== "hide" ? matching(recs, new Set(l.set.ids)) : new Set<string>();
+-      e.light(hit, `ln${i}`);
+-      for (const id of hit) all.add(id);
++      if (l.id !== FIND) {
++        e.light(hit, `ln${i}`);
++        for (const id of hit) all.add(id);
++      }
+       if (l.on && l.mode === "dim") keep = keep ? new Set([...keep].filter((x) => hit.has(x))) : hit;
+     });
+-    e.light(all.size || lenses.some((l) => l.on && l.mode !== "hide") ? all : new Set(), "ln");
++    e.light(all.size || lenses.some((l) => l.on && l.mode !== "hide" && l.id !== FIND) ? all : new Set(), "ln");
+     e.light(keep ? ((keep as Set<string>).size ? keep : new Set(["-"])) : new Set(), "keep");
+     e.light(hover?.from === "ref" ? matching(recs, new Set(hover.ids)) : new Set(), "ref");
+     e.light(hover?.from === "mark" && hover.at !== card.id ? matching(recs, new Set(hover.ids)) : new Set(), "lit");
+@@ -427,19 +429,18 @@ function CardView({ card, look, slot }: { card: Card; look: Look; slot: Slot })
+         </button>
+         <h3 className="ans-title" onClick={() => { if (!open) board.open(card.id, true); }}>{card.title}</h3>
+         <span className="ans-acts">
+-          {revs.length > 1 && open ? (
+-            <span className="ans-revs">
+-              <button type="button" disabled={rev === 0} aria-label="Earlier version" data-tip={revs[rev - 1]?.label} onClick={() => board.step(card.id, -1)}>‹</button>
+-              <span className="num">{rev + 1}/{revs.length}</span>
+-              <button type="button" disabled={rev === revs.length - 1} aria-label="Later version" data-tip={revs[rev + 1]?.label} onClick={() => board.step(card.id, 1)}>›</button>
+-            </span>
+-          ) : null}
+           <button type="button" className="panel-ask" aria-label={`Ask about ${card.title}`} data-tip="Ask about this" onClick={(e) => { e.stopPropagation(); board.insert([{ kind: "card", id: card.id }]); }}><AskIcon /></button>
+           {card.pinned ? null : <button type="button" className="btn" onClick={() => board.pin(card.id)}>Pin</button>}
+           <button type="button" className="ans-x" aria-label={`Remove ${card.title}`} data-tip="Remove" onClick={() => board.remove(card.id)}><X /></button>
+         </span>
+       </header>
+-      <p className="ans-q"><Question card={card} />{from && !card.parts?.some((p) => typeof p !== "string" && p.kind !== "set" && p.id === card.from) ? <button type="button" className="ans-from" onClick={() => reveal(card.from!)}>on {from}</button> : null}{busy ? <Status text={busy.status} /> : null}</p>
++      <p className="ans-q"><Question card={card} />{revs.length > 1 && open ? (
++        <span className="ans-revs">
++          <button type="button" disabled={rev === 0} aria-label="Earlier version" data-tip={revs[rev - 1]?.label} onClick={() => board.step(card.id, -1)}>‹</button>
++          <span className="num">{rev + 1}/{revs.length}</span>
++          <button type="button" disabled={rev === revs.length - 1} aria-label="Later version" data-tip={revs[rev + 1]?.label} onClick={() => board.step(card.id, 1)}>›</button>
++        </span>
++      ) : null}{from && !card.parts?.some((p) => typeof p !== "string" && p.kind !== "set" && p.id === card.from) ? <button type="button" className="ans-from" onClick={() => reveal(card.from!)}>on {from}</button> : null}{busy ? <Status text={busy.status} /> : null}</p>
+       <div className="fold ans-fold" data-open={open}>
+         <div inert={!open}>
+           {card.kind === "chart" ? <ChartBody card={card} look={look} /> : card.kind === "stack" ? <StackBody card={card} look={look} /> : <TextBody card={card} ready={look.ready} />}
+diff --git a/src/ask/Scopes.tsx b/src/ask/Scopes.tsx
+index 74e4228..14c64cb 100644
+--- a/src/ask/Scopes.tsx
++++ b/src/ask/Scopes.tsx
+@@ -53,25 +53,32 @@ function Find() {
+ const drag = (s: Scope) => (e: DragEvent) => { e.dataTransfer.setData(SCOPE_MIME, JSON.stringify(s)); e.dataTransfer.setData("text/plain", s.kind === "set" ? s.label : ""); e.dataTransfer.effectAllowed = "copy"; };
+ const count = (n: number) => `${n} ${n === 1 ? "record" : "records"}`;
+ 
++const MODES: { value: LensMode; label: string; tip: string }[] = [
++  { value: "dim", label: "Dim", tip: "Fade everything else" },
++  { value: "hide", label: "Hide", tip: "Hide everything else" },
++];
+ function SelChip() {
+   const sel = useBoard((s) => s.sel);
++  const findMode = useBoard((s) => s.findMode);
+   const scope: Scope = { kind: "set", label: sel.label, set: { ids: sel.ids } };
+   return (
+     <span className="scope-chip sel" draggable onDragStart={drag(scope)}>
+       <i className="ans-sw sel" />
+       <button type="button" className="scope-name" data-tip="Add to the question" onClick={() => board.insert([scope])}>{sel.label}</button>
+       <span className="scope-n num">{count(sel.ids.length)}</span>
++      {sel.from === "find" ? (
++        <div className="seg" role="group" aria-label={`How ${sel.label} shows`}>
++          {MODES.map((o) => (
++            <button key={o.value} type="button" aria-pressed={findMode === o.value} className={findMode === o.value ? "on" : ""} data-tip={o.tip} onClick={() => board.setFindMode(findMode === o.value ? null : o.value)}>{o.label}</button>
++          ))}
++        </div>
++      ) : null}
+       <button type="button" className="btn quiet" data-tip="Keep as a lens" onClick={() => board.keepSelection()}>Keep</button>
+       <button type="button" className="ask-x" aria-label="Clear the selection" data-tip="Clear (Esc)" onClick={() => board.clearSelection()}><X /></button>
+     </span>
+   );
+ }
+ 
+-const MODES: { value: LensMode; label: string; tip: string }[] = [
+-  { value: "mark", label: "Mark", tip: "Outline matching records" },
+-  { value: "dim", label: "Dim", tip: "Fade everything else" },
+-  { value: "hide", label: "Hide", tip: "Hide everything else" },
+-];
+ function LensChip({ l, i }: { l: Lens; i: number }) {
+   const [naming, setNaming] = useState(false);
+   // A double click renames the lens, so a single click waits to see whether a second one follows.
+diff --git a/src/ask/board.ts b/src/ask/board.ts
+index c534d8b..dd0a2fe 100644
+--- a/src/ask/board.ts
++++ b/src/ask/board.ts
+@@ -1,4 +1,4 @@
+-import { useSyncExternalStore } from "react";
++import { useMemo, useSyncExternalStore } from "react";
+ import type { Answer } from "./spec";
+ 
+ // The answers beside the case board, the scopes the reader works with, and what the reader is pointing at. Pinned
+@@ -48,7 +48,7 @@ export interface Card {
+   text?: TextBody;
+ }
+ // mark outlines the records in the set, dim fades everything else, and hide removes everything else.
+-export type LensMode = "mark" | "dim" | "hide";
++export type LensMode = "dim" | "hide";
+ export interface Lens { id: string; name: string; set: SetDef; mode: LensMode; on: boolean }
+ export interface Selection { ids: string[]; label: string; from: string | null }
+ export interface Busy { question: string; status: string; at: string | null; near?: string; kind: "edit" | "view" | "text" | "lens" | "stack" }
+@@ -62,6 +62,8 @@ export interface BoardState {
+   cards: Card[];
+   lenses: Lens[];
+   sel: Selection;
++  // Whether the records found by the search dim or hide the rest, as a lens would.
++  findMode: LensMode | null;
+   focus: string | null;
+   // The panels and answers named in the question being written.
+   ctx: string[];
+@@ -78,14 +80,14 @@ function restore(): Pick<BoardState, "cards" | "lenses" | "layout"> {
+   try { const l = localStorage.getItem(LAYOUT_KEY); if (l === "column" || l === "below") layout = l; } catch { /* the default */ }
+   try {
+     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
+-    // Lenses saved before the hide mode existed called dimming "only".
+-    if (s && Array.isArray(s.cards)) return { cards: s.cards, lenses: (s.lenses ?? []).map((l: Omit<Lens, "mode"> & { mode: string }) => ({ ...l, mode: l.mode === "only" ? "dim" : l.mode })), layout };
++    // Older lenses could only mark their records, or called dimming "only".
++    if (s && Array.isArray(s.cards)) return { cards: s.cards, lenses: (s.lenses ?? []).map((l: Omit<Lens, "mode"> & { mode: string }) => ({ ...l, mode: l.mode === "hide" ? "hide" : "dim" })), layout };
+   } catch { /* nothing was saved */ }
+   return { cards: [], lenses: [], layout };
+ }
+ 
+ const NONE: Selection = { ids: [], label: "", from: null };
+-let state: BoardState = { ...restore(), sel: NONE, focus: null, ctx: [], hover: null, busy: null, note: "" };
++let state: BoardState = { ...restore(), sel: NONE, findMode: null, focus: null, ctx: [], hover: null, busy: null, note: "" };
+ const subs = new Set<() => void>();
+ let saved = "";
+ function set(patch: Partial<BoardState>) {
+@@ -101,6 +103,15 @@ export function useBoard<T>(pick: (s: BoardState) => T): T {
+   return useSyncExternalStore((f) => { subs.add(f); return () => { subs.delete(f); }; }, () => pick(state));
+ }
+ 
++// The lenses that are drawn, with the records found by the search when they dim or hide the rest.
++export const FIND = "find";
++export function useLenses(): Lens[] {
++  const lenses = useBoard((s) => s.lenses);
++  const sel = useBoard((s) => s.sel);
++  const mode = useBoard((s) => s.findMode);
++  return useMemo(() => (sel.from === FIND && mode && sel.ids.length ? [...lenses, { id: FIND, name: sel.label, set: { ids: sel.ids }, mode, on: true }] : lenses), [lenses, sel, mode]);
++}
++
+ export const answerOf = (c: Card | undefined | null) => (c?.revs ? c.revs[c.rev ?? c.revs.length - 1].answer : null);
+ let n = 0;
+ const newId = () => `a${Date.now().toString(36)}${n++}`;
+@@ -118,6 +129,7 @@ export const board = {
+   focus(id: string | null) { if (state.focus !== id) set({ focus: id }); },
+   select(sel: Selection) { set({ sel }); },
+   clearSelection() { if (state.sel.ids.length) set({ sel: NONE }); },
++  setFindMode(findMode: LensMode | null) { set({ findMode }); },
+   hover(h: Hover | null) { if (h || state.hover) set({ hover: h }); },
+   busy(b: Busy | null) { set({ busy: b }); },
+   note(note: string) { set({ note }); },
+@@ -167,7 +179,7 @@ export const board = {
+     const cards = state.cards.filter((c) => c.id !== id).map((c) => (c.from === id ? { ...c, from: gone?.from ?? null, near: gone?.near, y: gone?.y } : c));
+     set({ cards, focus: state.focus === id ? null : state.focus, sel: state.sel.from === id ? NONE : state.sel });
+   },
+-  addLens(name: string, s: SetDef, mode: LensMode = "mark") {
++  addLens(name: string, s: SetDef, mode: LensMode = "dim") {
+     const lens: Lens = { id: newId(), name, set: s, mode, on: true };
+     set({ lenses: [...state.lenses.slice(-3), lens] });
+     return lens.id;
+@@ -175,7 +187,7 @@ export const board = {
+   // The selection becomes a lens, and stops being the selection.
+   keepSelection() {
+     if (!state.sel.ids.length) return;
+-    const lens: Lens = { id: newId(), name: state.sel.label, set: { ids: state.sel.ids }, mode: "mark", on: true };
++    const lens: Lens = { id: newId(), name: state.sel.label, set: { ids: state.sel.ids }, mode: (state.sel.from === "find" && state.findMode) || "dim", on: true };
+     set({ lenses: [...state.lenses.slice(-3), lens], sel: NONE });
+   },
+   updateLens(id: string, patch: Partial<Lens>) { set({ lenses: state.lenses.map((l) => (l.id === id ? { ...l, ...patch } : l)) }); },
+diff --git a/src/ask/records.ts b/src/ask/records.ts
+index 8858990..1667dec 100644
+--- a/src/ask/records.ts
++++ b/src/ask/records.ts
+@@ -1,6 +1,7 @@
+ import { MENTIONS, TABLES } from "../tables";
+ import { entityIn, entityNamed } from "./entities";
+ import type { MarkT } from "./render";
++import { FIND } from "./board";
+ import type { Lens, LensMode } from "./board";
+ 
+ // Every base row with an id is a record, and every view on the board draws records. For each record the page keeps
+@@ -83,7 +84,8 @@ export function matching(marks: MarkRecords[], ids: Set<string>): Set<string> {
+ export interface Prepared { set: Set<string>; wide: Set<string> }
+ export const prepare = (ids: string[]): Prepared => ({ set: new Set(ids), wide: new Set([...ids, ...entitiesOf(ids)]) });
+ export interface OnLens extends Prepared { i: number; mode: LensMode }
+-export const onLenses = (lenses: Lens[]): OnLens[] => lenses.flatMap((l, i) => (l.on ? [{ i, mode: l.mode, ...prepare(l.set.ids) }] : []));
++// The search gets no lens color, since its records are already the selection.
++export const onLenses = (lenses: Lens[]): OnLens[] => lenses.flatMap((l, i) => (l.on ? [{ i: l.id === FIND ? -1 : i, mode: l.mode, ...prepare(l.set.ids) }] : []));
+ 
+ // Dimming and hiding narrow the view: a record stays lit or shown only when it matches every lens that dims or
+ // hides. Records that stand for nothing in the tables, such as a row of totals without its source rows, stay.
+diff --git a/src/components/NetworkView.tsx b/src/components/NetworkView.tsx
+index 346cfdd..8bce6fb 100644
+--- a/src/components/NetworkView.tsx
++++ b/src/components/NetworkView.tsx
+@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
+ import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
+ import { motion } from "../motion";
+ import type { Camera } from "../gpu/scene";
+-import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/network";
++import { buildCoreModel, buildNetBuffers, pick } from "../gpu/network";
+ import type { Emph, NetModel } from "../gpu/network";
+ import { rgba } from "../themes";
+ import type { RGBA, Theme } from "../themes";
+@@ -12,7 +12,6 @@ import { board, useBoard } from "../ask/board";
+ import { cssColor, emphasis, useLinks } from "../links";
+ import { useWs, ws } from "../workspace";
+ 
+-type Density = "case" | "5k" | "100k";
+ interface Readout { id?: string; name: string; role?: string; ties: number }
+ interface Stats { n: number; m: number; segs: number }
+ interface Pose { cam: Camera; lift: number }
+@@ -140,7 +139,7 @@ class NetController {
+       yaw: deep ? this.deep!.yaw : 0, pitch: deep ? this.deep!.pitch : TOP_DOWN, scale: 1, fov: s.cam.fov,
+     };
+     const w = s.width || 800, h = s.height || 600;
+-    const fill = m.dense && !m.sheets.length ? 0.94 : deep ? 0.84 : 0.86;
++    const fill = deep ? 0.84 : 0.86;
+     // A ring layout is fitted to its outer circle, which is tighter than the bounding square once the view is turned.
+     const hull: [number, number][] = ringR
+       ? Array.from({ length: 24 }, (_, i) => [Math.cos((i / 24) * Math.PI * 2) * ringR, Math.sin((i / 24) * Math.PI * 2) * ringR])
+@@ -158,7 +157,7 @@ class NetController {
+       const [sx0, sx1, sy0, sy1] = extent();
+       s.cam.scale *= Math.min((w * fill) / (sx1 - sx0), (h * fill) / (sy1 - sy0));
+       const [cx0, cx1, cy0, cy1] = extent();
+-      const dx = w / 2 + (m.dense ? 0 : 24) - (cx0 + cx1) / 2, dy = h / 2 - (cy0 + cy1) / 2;
++      const dx = w / 2 + 24 - (cx0 + cx1) / 2, dy = h / 2 - (cy0 + cy1) / 2;
+       if (s.cam.pitch < 1.2) {
+         s.pan(dx, 0);
+         s.cam.tz += dy / (s.cam.scale * Math.cos(s.cam.pitch));
+@@ -236,7 +235,7 @@ class NetController {
+   };
+ 
+   private rebuild() {
+-    const b = buildNetBuffers(this.model, this.theme, this.selected, this.model.dense ? null : this.emph);
++    const b = buildNetBuffers(this.model, this.theme, this.selected, this.emph);
+     this.scene.setLayer("quads", b.quads.data, b.quads.count);
+     this.scene.setLayer("surface", b.surface, b.surfaceCount);
+     this.scene.setLayer("base", b.base.data, b.base.count);
+@@ -385,7 +384,7 @@ class NetController {
+     this.lk = lk;
+     this.applyLinks();
+     const m = this.model;
+-    if (!root || m.dense) {
++    if (!root) {
+       if (this.emph) { this.emph = null; this.emphKey = ""; this.rebuild(); }
+       return;
+     }
+@@ -449,7 +448,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
+   const { staged } = usePanel();
+   const inspected = useWs((s) => s.trail[s.trail.length - 1]);
+   const replays = useWs((s) => s.replays);
+-  const [density, setDensity] = useState<Density>("case");
+   const [space, setSpace] = useState<"flat" | "deep">("deep");
+   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
+   const [readout, setReadout] = useState<Readout | null>(null);
+@@ -481,7 +479,7 @@ export function NetworkView({ theme }: { theme: Theme }) {
+   useEffect(() => {
+     ctl.current?.measure();
+     ctl.current?.layout();
+-  }, [readout, space, density, staged]);
++  }, [readout, space, staged]);
+ 
+   useEffect(() => {
+     if (replays) ctl.current?.scene.playReveal(theme.motion.reveal);
+@@ -504,17 +502,13 @@ export function NetworkView({ theme }: { theme: Theme }) {
+   // The network's own selection already lights the selected entity and its ties.
+   useEffect(() => { ctl.current?.setLinks((id) => links.mark([id]), (links.root ?? "").split(" ").filter((f) => f !== "sel" || selFrom !== "01").join(" ")); }, [links, status, selFrom]);
+ 
+-  const change = (d: Density) => {
+-    setDensity(d);
+-    ctl.current?.setModel(d === "case" ? buildCoreModel(theme.gpu) : buildStressModel(d === "5k" ? 5000 : 100000, theme.gpu), 700);
+-  };
+   const changeSpace = (v: "flat" | "deep") => {
+     setSpace(v);
+     ctl.current?.setDeep(v === "deep");
+   };
+ 
+   return (
+-    <div className="viz net" data-dense={density !== "case"}>
++    <div className="viz net">
+       <canvas ref={canvas} aria-label="Relationship network" />
+       <div className="viz-labels" ref={labels} data-lk={links.root} />
+       <div className="net-hover" ref={hover} hidden>
+@@ -532,7 +526,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
+       </ul>
+       <div className="viz-tr" data-keepout>
+         {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan", note: "morph rest" }]} /> : null}
+-        <Segmented label="Graph size" value={density} onChange={change} options={[{ value: "case", label: "Case file" }, { value: "5k", label: "5,000" }, { value: "100k", label: "100,000" }]} />
+         <div className="viz-zoom">
+           <button type="button" aria-label="Zoom in" data-tip="Zoom in (Ctrl-scroll)" onClick={() => ctl.current?.zoom(1.35)}>+</button>
+           <button type="button" aria-label="Zoom out" onClick={() => ctl.current?.zoom(1 / 1.35)}>&minus;</button>
+diff --git a/src/gpu/network.ts b/src/gpu/network.ts
+index 74f4632..1f04160 100644
+--- a/src/gpu/network.ts
++++ b/src/gpu/network.ts
+@@ -59,7 +59,6 @@ export interface NetModel {
+   // Pitch of the lattice the entities stand on, where the arrangement is a board of keys.
+   keys?: number;
+   half: number;
+-  dense: boolean;
+   adjStart: Uint32Array;
+   adj: Uint32Array;
+   grid: { cell: number; cols: number; start: Uint32Array; items: Uint32Array };
+@@ -110,8 +109,8 @@ function finish(d: Draft, g: GpuStyle): NetModel {
+     const cell = Math.max(7, span / 110);
+     terrain = makeField(x0 - pad, y0 - pad, x1 + pad, y1 + pad, cell);
+     for (let i = 0; i < n; i++) splat(terrain, x[i], y[i], d.weight ? d.weight[i] : d.radius[i] > 4 ? 5 : 0.5);
+-    blur(terrain, Math.max(2, Math.round((d.dense ? span / 30 : 52) / cell)));
+-    scaleTo(terrain, d.dense ? span * 0.11 : Math.min(170, span * 0.2));
++    blur(terrain, Math.max(2, Math.round(52 / cell)));
++    scaleTo(terrain, Math.min(170, span * 0.2));
+   }
+   const count = [0, 0, 0];
+   for (let i = 0; i < n; i++) {
+@@ -266,61 +265,7 @@ export function buildCoreModel(g: GpuStyle): NetModel {
+     names: entities.map((e) => (e.name === e.id ? undefined : e.name)),
+     roles: entities.map((e) => e.role),
+     labels: entities.flatMap((e, i) => (e.label ? [i] : [])),
+-    focus, rings, keys, half: half + 30, dense: false,
+-  }, g);
+-}
+-
+-export function buildStressModel(n: number, g: GpuStyle): NetModel {
+-  const rand = mulberry32(n);
+-  const gauss = () => (rand() + rand() + rand() + rand() + rand() + rand() - 3) * 0.82;
+-  const clusters = Math.max(6, Math.round(Math.sqrt(n) / 3.2));
+-  const half = Math.sqrt(n) * 7.4;
+-  const sizes = Array.from({ length: clusters }, (_, c) => 1 / Math.pow(c + 2, 0.72));
+-  const total = sizes.reduce((a, b) => a + b, 0);
+-  const x = new Float32Array(n), y = new Float32Array(n), radius = new Float32Array(n);
+-  const shape = new Uint8Array(n), sector = new Uint8Array(n), hollow = new Uint8Array(n);
+-  const cstart: number[] = [0];
+-  let i = 0;
+-  for (let c = 0; c < clusters; c++) {
+-    const count = c === clusters - 1 ? n - i : Math.min(n - i, Math.round((sizes[c] / total) * n));
+-    const a = c * 2.39996;
+-    const rr = half * 0.84 * Math.sqrt((c + 0.6) / clusters);
+-    const cx = Math.cos(a) * rr, cy = Math.sin(a) * rr;
+-    const sigma = Math.sqrt(count) * 2.5;
+-    const major = Math.floor(rand() * 3);
+-    const squash = 0.55 + rand() * 0.45, tilt = rand() * Math.PI;
+-    for (let k = 0; k < count; k++, i++) {
+-      const gx = gauss() * sigma, gy = gauss() * sigma * squash;
+-      x[i] = cx + gx * Math.cos(tilt) - gy * Math.sin(tilt);
+-      y[i] = cy + gx * Math.sin(tilt) + gy * Math.cos(tilt);
+-      const hub = rand() < 0.012;
+-      radius[i] = hub ? 5 + rand() * 4 : 1.5 + rand() * 1.6;
+-      const s = rand() < 0.78 ? major : Math.floor(rand() * 4);
+-      sector[i] = s;
+-      shape[i] = s === 3 ? SHAPE.asterisk : [SHAPE.circle, SHAPE.circle, SHAPE.square, SHAPE.diamond, SHAPE.triangle, SHAPE.hexagon][Math.floor(rand() * 6)];
+-      hollow[i] = s === 0 && hub ? 1 : 0;
+-    }
+-    cstart.push(i);
+-  }
+-  const m = n * 3;
+-  const es = new Uint32Array(m), et = new Uint32Array(m), etype = new Uint8Array(m), ew = new Float32Array(m);
+-  let e = 0;
+-  for (let c = 0; c < clusters; c++) {
+-    const a = cstart[c], b = cstart[c + 1];
+-    for (let s = a; s < b; s++) {
+-      for (let k = 0; k < 3; k++, e++) {
+-        es[e] = s;
+-        const far = rand() < 0.035;
+-        et[e] = far ? Math.floor(rand() * n) : a + Math.floor(rand() * (b - a));
+-        const r = rand();
+-        etype[e] = r < 0.07 ? EDGE.money : r < 0.16 ? EDGE.contact : EDGE.plain;
+-        ew[e] = 1 + rand() * 4;
+-      }
+-    }
+-  }
+-  return finish({
+-    n, m, x, y, radius, shape, sector, hollow, es, et, etype, ew,
+-    ids: [], names: [], roles: [], labels: [], focus: -1, rings: [], half: half * 1.12, dense: true,
++    focus, rings, keys, half: half + 30,
+   }, g);
+ }
+ 
+@@ -381,8 +326,6 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+   const clockwork = theme.family === "orrery";
+   const { n, m, x, y, z, es, et, etype, ew } = model;
+   const colors: RGBA[] = g.sectors ? g.sectors.map((c) => rgba(c)) : SECTORS.map((s) => rgba(theme.vars[`--${s}`]));
+-  const density = model.dense ? Math.max(0.1, Math.min(1, Math.sqrt(1400 / m))) : 1;
+-  const widthScale = model.dense ? 0.8 : 1;
+   // Ties run along the ground between blocks, and from mark to mark everywhere else.
+   const grounded = form === "blocks";
+   const P = (i: number): [number, number, number] => [x[i], y[i], grounded ? 0 : z[i]];
+@@ -399,9 +342,9 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+ 
+   const quads = new QuadWriter();
+   const shadows = new QuadWriter();
+-  const boxes = new BoxWriter(model.dense ? 1024 : n);
+-  const base = new SegWriter(model.dense ? m : m * 26 + 4096);
+-  const flows = new SegWriter(model.dense ? Math.ceil(m * 0.1) : 4096);
++  const boxes = new BoxWriter(n);
++  const base = new SegWriter(m * 26 + 4096);
++  const flows = new SegWriter(4096);
+   const guide = rgba(g.guide.color, g.guide.alpha);
+   const faint = rgba(g.guide.color, g.guide.alpha * 0.55);
+   const bg = rgba(g.vizBg);
+@@ -410,10 +353,10 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+ 
+   if (form === "strata") {
+     const [x0, y0, x1, y1] = model.bounds;
+-    const pad = model.dense ? 40 : 46;
++    const pad = 46;
+     const film = rgba("#F6F9F3", 0.6);
+     const ink = rgba(g.guide.color, 1);
+-    [...model.sheets].reverse().forEach((s, k) => quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, s.z, film, ink, model.dense ? 0 : 26, 0.22, 0.8, 1, k * 0.12));
++    [...model.sheets].reverse().forEach((s, k) => quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, s.z, film, ink, 26, 0.22, 0.8, 1, k * 0.12));
+     for (const [cx, cy] of [[x0 - pad, y0 - pad], [x1 + pad, y0 - pad], [x0 - pad, y1 + pad], [x1 + pad, y1 + pad]])
+       base.line([cx, cy, -STRATA_GAP], [cx, cy, STRATA_GAP], { color: rgba(g.guide.color, 0.3), width: 0.8, dash: 4, delay: 0.3 });
+   }
+@@ -421,8 +364,8 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+   const keys = model.keys ? g.block!.keys! : undefined;
+   if (form === "blocks" && !keys) {
+     const [x0, y0, x1, y1] = model.bounds;
+-    const pad = model.dense ? 40 : 46;
+-    quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, 0, [bg[0], bg[1], bg[2], 0], rgba(g.guide.color, 1), model.dense ? 0 : 24, g.guide.alpha, g.guide.alpha * 1.6, 1, 0);
++    const pad = 46;
++    quads.sheet(x0 - pad, y0 - pad, x1 + pad, y1 + pad, 0, [bg[0], bg[1], bg[2], 0], rgba(g.guide.color, 1), 24, g.guide.alpha, g.guide.alpha * 1.6, 1, 0);
+     const corner = rgba(g.guide.color, Math.min(1, g.guide.alpha * 3));
+     for (const [cx, cy, sx, sy] of [[x0 - pad, y0 - pad, 1, 1], [x1 + pad, y0 - pad, -1, 1], [x0 - pad, y1 + pad, 1, -1], [x1 + pad, y1 + pad, -1, -1]]) {
+       base.line([cx - 14 * sx, cy, 0], [cx + 22 * sx, cy, 0], { color: corner, width: 1.4, delay: 0.1 });
+@@ -452,7 +395,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+       base.line([Math.cos(a) * (R + 8), Math.sin(a) * (R + 8), 0], [Math.cos(a) * (R + 8 + len), Math.sin(a) * (R + 8 + len), 0],
+         { color: t % 6 === 0 ? guide : faint, width: 0.9, spin: -Math.PI / 150, delay: 0.7 + (t / 72) * 0.25 });
+     }
+-    const meridians = model.dense ? 8 : 12;
++    const meridians = 12;
+     for (let k = 0; k < meridians; k++) {
+       const a = (k / meridians) * Math.PI * 2;
+       base.path((t) => [Math.cos(a) * t * R, Math.sin(a) * t * R, dome(t * R)], 30, { color: faint, width: 0.8, spin: Math.PI / 75, delay: 0.2 + t01(k, meridians) * 0.3 });
+@@ -503,18 +446,18 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+ 
+   const stemmed = form === "armillary" || form === "relief";
+   if (stemmed) {
+-    const stem = rgba(g.guide.color, model.dense ? 0.16 : form === "relief" ? 0.7 : 0.5);
++    const stem = rgba(g.guide.color, form === "relief" ? 0.7 : 0.5);
+     for (let i = 0; i < n; i++) {
+-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
++      if (!fa(i)) continue;
+       base.line([x[i], y[i], model.zBase[i]], [x[i], y[i], z[i]], { color: dim(stem, (lit(i) ? 1 : 0.25) * fa(i)), width: 0.8, delay: model.delay[i] });
+     }
+   }
+ 
+-  const edgeC = rgba(g.edge.color, g.edge.alpha * density * (model.dense && g.additiveBase ? 0.5 : 1));
+-  const contactC = rgba(g.contact.color, g.contact.alpha * Math.min(1, density * 1.6));
+-  const moneyC = rgba(g.money.color, g.money.alpha * (model.dense ? Math.min(1, density * 3) : 1));
+-  const bend = model.dense ? 0 : g.edge.curve;
+-  const rise = (form === "armillary" || form === "relief") && !model.dense ? 0.07 : 0;
++  const edgeC = rgba(g.edge.color, g.edge.alpha);
++  const contactC = rgba(g.contact.color, g.contact.alpha);
++  const moneyC = rgba(g.money.color, g.money.alpha);
++  const bend = g.edge.curve;
++  const rise = (form === "armillary" || form === "relief") ? 0.07 : 0;
+   const steps = 22;
+   const money: number[] = [];
+   const edgeDelay = (e: number) => Math.max(0, Math.min(model.delay[es[e]], model.delay[et[e]]) - 0.08);
+@@ -535,23 +478,23 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+     const k = edgeLit(e);
+     if (!k) continue;
+     const s: Stroke = type === EDGE.contact
+-      ? { color: dim(contactC, k), width: g.contact.width * widthScale, dash: g.contact.dash, delay: edgeDelay(e) }
+-      : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width * widthScale, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
++      ? { color: dim(contactC, k), width: g.contact.width, dash: g.contact.dash, delay: edgeDelay(e) }
++      : { color: dim(edgeC, type === EDGE.attend ? k * 0.7 : k), width: g.edge.width, dash: type === EDGE.attend ? 3 : 0, delay: edgeDelay(e) };
+     if (keys) base.poly(route(e), s);
+     else base.curve(P(es[e]), P(et[e]), bend, rise, s, steps);
+   }
+ 
+   const rand = mulberry32(3);
+-  const strong = (e: number) => model.dense || ew[e] >= 2;
+-  const mw = (e: number) => (model.dense ? 1 : strong(e) ? g.money.width * (0.5 + ew[e] * 0.085) : g.money.weak);
+-  const lift = model.dense || grounded ? 0 : form === "armillary" || form === "relief" ? 0.24 : form === "dome" ? 0.2 : 0;
++  const strong = (e: number) => ew[e] >= 2;
++  const mw = (e: number) => (strong(e) ? g.money.width * (0.5 + ew[e] * 0.085) : g.money.weak);
++  const lift = grounded ? 0 : form === "armillary" || form === "relief" ? 0.24 : form === "dome" ? 0.2 : 0;
+   for (const e of money) {
+     if (!edgeLit(e)) continue;
+     const color = dim(moneyC, edgeLit(e) * (strong(e) ? 1 : g.money.weakAlpha));
+-    const s: Stroke = { color, width: mw(e) * (strong(e) ? widthScale : 1), phase: rand(), delay: edgeDelay(e) };
++    const s: Stroke = { color, width: mw(e), phase: rand(), delay: edgeDelay(e) };
+     if (strong(e)) {
+       if (g.money.mode === "pulse") { s.flow = 0.16 + rand() * 0.14; s.pulse = 1.5; }
+-      else { s.dash = model.dense ? 6 : 8; s.flow = 0.9; }
++      else { s.dash = 8; s.flow = 0.9; }
+     }
+     if (keys) flows.poly(route(e), s);
+     else flows.curve(P(es[e]), P(et[e]), bend, strong(e) ? lift : rise, s, steps);
+@@ -570,7 +513,7 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+           if (!used.has(cy * 4096 + cx)) boxes.box(cx * p, cy * p, 0, p * 0.36, 4, blank, shadeRgb(blank, 0.7), ink, blk.outline, 0, Math.min(1, Math.hypot(cx * p, cy * p) / model.half));
+     }
+     for (let i = 0; i < n; i++) {
+-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
++      if (!fa(i)) continue;
+       const half = keys ? keys.pitch * 0.36 : model.radius[i] * blk.width;
+       const hot = i === model.focus && blk.focus;
+       let top = hot ? rgba(blk.focus!) : blk.paint === "sector" ? colors[model.sector[i]] : rgba(blk.top);
+@@ -586,20 +529,20 @@ export function buildNetBuffers(model: NetModel, theme: Theme, selected: number,
+   if (stemmed) {
+     const foot = rgba(g.guide.color, 0.75);
+     for (let i = 0; i < n; i++) {
+-      if ((model.dense && model.radius[i] < 4) || !fa(i)) continue;
++      if (!fa(i)) continue;
+       writeMark(marks, c++, x[i], y[i], model.zBase[i], 1.3, SHAPE.circle, dim(foot, (lit(i) ? 1 : 0.25) * fa(i)), 0, 1, 0, 1, model.delay[i]);
+     }
+   }
+   const glyph = blk?.glyph ? rgba(blk.glyph) : null;
+   for (let i = 0; i < n; i++) {
+     if (!fa(i)) continue;
+-    const boxed = blk && !(model.dense && model.radius[i] < 4);
++    const boxed = !!blk;
+     const own = boxed && i === model.focus && blk.focus ? rgba("#FFFFFF") : boxed && glyph ? glyph : colors[model.sector[i]];
+     const col = dim(own, (lit(i) ? 1 : 0.2) * fa(i));
+     const r = model.radius[i] * (boxed ? g.node.scale : blk ? 1 : g.node.scale);
+     const hollow = model.shape[i] !== SHAPE.asterisk && (g.node.hollowAll || (g.node.hollowOfficials && model.hollow[i] === 1));
+     const knock = boxed ? 0 : -1;
+-    writeMark(marks, c++, x[i], y[i], z[i], r, model.shape[i], col, hollow ? g.node.stroke : 0, hollow ? knock : 1, model.dense ? 0 : g.node.halo, 1, Math.min(1, model.delay[i] + 0.1));
++    writeMark(marks, c++, x[i], y[i], z[i], r, model.shape[i], col, hollow ? g.node.stroke : 0, hollow ? knock : 1, g.node.halo, 1, Math.min(1, model.delay[i] + 0.1));
+   }
+   const reach = (i: number) => (keys ? keys.pitch * 0.5 : blk ? model.radius[i] * blk.width * 1.2 : model.radius[i] * g.node.scale);
+   const ring = (i: number, pad: number, width: number, color: RGBA) =>
+diff --git a/src/links.ts b/src/links.ts
+index 4211572..e23c5b2 100644
+--- a/src/links.ts
++++ b/src/links.ts
+@@ -1,5 +1,5 @@
+ import { useMemo } from "react";
+-import { board, useBoard } from "./ask/board";
++import { board, useBoard, useLenses } from "./ask/board";
+ import { hits, onLenses, passes, prepare } from "./ask/records";
+ import type { RGBA } from "./themes";
+ 
+@@ -10,15 +10,15 @@ import type { RGBA } from "./themes";
+ 
+ export function useLinks(fig: string) {
+   const sel = useBoard((s) => s.sel);
+-  const lenses = useBoard((s) => s.lenses);
++  const lenses = useLenses();
+   const hover = useBoard((s) => s.hover);
+   return useMemo(() => {
+     const S = sel.ids.length ? prepare(sel.ids) : null;
+     const R = hover?.from === "ref" ? prepare(hover.ids) : null;
+     const M = hover?.from === "mark" && hover.at !== fig ? prepare(hover.ids) : null;
+     const L = onLenses(lenses);
+-    const outline = L.filter((l) => l.mode !== "hide");
+-    const root = [S && "sel", R && "ref", outline.length && "ln", L.some((l) => l.mode !== "mark") && "keep", L.some((l) => l.mode === "hide") && "hide"].filter(Boolean).join(" ") || undefined;
++    const outline = L.filter((l) => l.mode !== "hide" && l.i >= 0);
++    const root = [S && "sel", R && "ref", outline.length && "ln", L.length > 0 && "keep", L.some((l) => l.mode === "hide") && "hide"].filter(Boolean).join(" ") || undefined;
+     const mark = (own: string[]) => {
+       const out = ["lk"];
+       if (S && hits(own, S.set, S.wide)) out.push("lk-sel");
+diff --git a/src/styles/base.css b/src/styles/base.css
+index 97c1521..55fe7b1 100644
+--- a/src/styles/base.css
++++ b/src/styles/base.css
+@@ -564,7 +564,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+ .ans-acts { display: flex; align-items: center; gap: 6px; flex: none; }
+ .ans-acts .btn { padding: 2px 10px; font-size: 12.5px; }
+ .ans-acts .panel-ask { margin: 0; }
+-.ans-revs { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-3); font-size: 12px; }
++.ans-revs { display: inline-flex; align-items: center; gap: 2px; align-self: center; margin: -4px 0; color: var(--ink-3); font-size: 12px; }
+ .ans-revs button { width: 20px; height: 22px; padding: 0; border: 0; background: none; color: var(--ink-2); font: 16px/1 var(--font-ui); cursor: pointer; }
+ .ans-revs button:disabled { opacity: 0.35; cursor: default; }
+ .ans-revs button:not(:disabled):hover { color: var(--accent-text); }
+@@ -1133,7 +1133,6 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
+ .readout .btn { display: inline-flex; width: fit-content; margin-top: 8px; padding: 3px 10px; }
+ 
+ /* ------------------------------------------------- Stage, rail and drawer */
+-.shell[data-inspect] { padding-right: var(--inspector-w); }
+ .board[data-stage] {
+   grid-template-columns: minmax(0, 1fr) 288px;
+   grid-template-rows: repeat(13, auto) minmax(0, 1fr);
+@@ -1160,10 +1159,11 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
+ @keyframes rim { from { border-color: rgba(240, 190, 100, 0.95); box-shadow: 0 0 70px -18px rgba(255, 139, 31, 0.6); } }
+ 
+ .inspector {
+-  position: fixed; z-index: 15; top: var(--bar-h); right: 0; bottom: 0; width: var(--inspector-w);
++  position: fixed; z-index: 17; top: var(--bar-h); right: 0; bottom: 0; width: var(--inspector-w);
+   display: flex; flex-direction: column;
+   background: var(--surface-solid);
+   border-left: var(--rule-w) solid var(--rule-strong);
++  box-shadow: -24px 0 50px -30px rgba(0, 0, 0, 0.6);
+   view-transition-name: inspector;
+ }
+ .insp-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 14px 8px 18px; border-bottom: var(--rule-w) solid var(--rule); }
+@@ -1191,8 +1191,7 @@ html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-bo
+ @keyframes slide-out { to { transform: translateX(100%); } }
+ 
+ @media (max-width: 1100px) {
+-  .shell[data-inspect] { padding-right: 0; }
+-  .inspector { width: min(var(--inspector-w), 100vw); box-shadow: -24px 0 50px -30px rgba(0, 0, 0, 0.6); }
++  .inspector { width: min(var(--inspector-w), 100vw); }
+   .board[data-stage] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+   .board[data-stage] > .panel.tile { display: none; }
+   .gt-detail { grid-template-columns: 1fr; gap: 16px; }

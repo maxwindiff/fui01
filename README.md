@@ -30,6 +30,25 @@ An answer can be a chart, a stack of charts on a shared time axis, a written ans
 
 Answers that are not pinned are dropped when the page reloads. Pinned answers, lenses and the layout are saved in the browser. A script answers a fixed set of questions, which the + menu lists, and other questions go to a model through `api/ask.ts`. The questions used to test the design are in `docs/ask-questions.md`.
 
+## Review
+
+The Review tab beside Case is a static prototype of a code review tool. In it, an agent prepares a change for a reviewer. The tab shows three commits from this repository, small, medium and large. `src/review/changes/` holds their output from `git show`, and `src/review/data/` holds what the agent wrote about each one:
+- its own review, as draft comments
+- flows through the code, some with a sequence diagram
+- a reading order for the files
+- pseudocode for runs of lines in the hunks, at two levels
+
+Text in these files links to code by hunk, as `path@line` with an optional `:i` for a line inside the hunk.
+
+The page puts the file tree, the agent's review and the flows on the left. The middle column starts with the commit message and then shows the files in the agent's reading order. Comments and questions go on the right. The slider sets the summarization level for the whole change:
+1. Raw shows every line.
+2. Condensed turns uninteresting code, such as long attribute lists and boilerplate, into pseudocode or folds it away.
+3. Abstracted also turns self-contained pieces of logic into pseudocode, for example a single call to an invented function, `pop_morph_and_wake_scenes()`.
+
+When the replaced lines define names used elsewhere, the agent writes pseudocode for them instead of folding them away. Each pseudocode line takes the indentation of the first replaced line, and changed lines and their pseudocode are highlighted. Selecting pseudocode opens the original lines in place. `src/review/highlight.ts` highlights TypeScript, CSS, Markdown and JSON one line at a time.
+
+Marking a hunk as read folds it to its header, and marking a whole file folds the file to its name. Selecting a folded header opens it again, and `n` jumps to the next unread hunk. A line number opens a comment box. The agent's draft comment for a finding shows under its line after the reviewer picks the finding from the list on the left. The reviewer can accept the draft as a comment, edit it first or dismiss it, and Sync posts the comments to GitHub. The prototype has no GitHub, so Sync only marks the comments as posted. Questions get scripted answers. Read marks and comments are saved in the browser.
+
 ## Rendering
 
 Each kind of content is drawn with the lightest technology that can carry its mark count.

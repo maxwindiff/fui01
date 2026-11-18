@@ -22,6 +22,7 @@ import { DOCS, FILINGS, FLOW_TOTAL, fmtMoney, GLANCE, GRAPH, STATE_GIVING, WINDO
 
 // The answers column brings DuckDB and the chart renderer with it, so it loads after the case board.
 const Answers = lazy(() => import("./ask/Answers").then((m) => ({ default: m.Answers })));
+const Review = lazy(() => import("./review/Review").then((m) => ({ default: m.Review })));
 
 function BriefMenu() {
   const brief = useWs((s) => s.brief);
@@ -105,10 +106,13 @@ function CaseBoard({ theme }: { theme: Theme }) {
   );
 }
 
+type Page = "case" | "review";
 const fromHash = () => themeById(location.hash.slice(1).split("/")[0]).id;
+const pageFromHash = (): Page => (location.hash.slice(1).split("/")[1] === "review" ? "review" : "case");
 
 export function App() {
   const [id, setId] = useState(fromHash);
+  const [page, setPage] = useState(pageFromHash);
   const theme = themeById(id);
   const notes = useMemo(() => notesFor(theme), [theme]);
 
@@ -125,8 +129,8 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    history.replaceState(null, "", `#${theme.id}`);
-  }, [theme]);
+    history.replaceState(null, "", `#${theme.id}${page === "review" ? "/review" : ""}`);
+  }, [theme, page]);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -157,15 +161,20 @@ export function App() {
       <TipLayer notes={notes} />
       <header className="switcher">
         <Segmented label="Theme" value={id} onChange={setId} options={THEMES.map((t, i) => ({ value: t.id, label: t.name, tip: `Key ${i + 1}` }))} />
-        <Crumbs root="Whitcombe case" />
+        <Segmented label="Page" value={page} onChange={setPage} options={[{ value: "case", label: "Case" }, { value: "review", label: "Review" }]} />
+        {page === "case" ? <Crumbs root="Whitcombe case" /> : <span className="crumbs" />}
         <MotionControl />
-        <BriefButton />
+        {page === "case" ? <BriefButton /> : null}
       </header>
-      <BriefMenu />
-      <Frame key={theme.id} aside={<Suspense fallback={<aside className="answers" />}><Answers theme={theme} /></Suspense>}>
-        <CaseBoard theme={theme} />
-      </Frame>
-      <Inspector />
+      {page === "case" ? (
+        <>
+          <BriefMenu />
+          <Frame key={theme.id} aside={<Suspense fallback={<aside className="answers" />}><Answers theme={theme} /></Suspense>}>
+            <CaseBoard theme={theme} />
+          </Frame>
+          <Inspector />
+        </>
+      ) : <Suspense fallback={null}><Review /></Suspense>}
     </>
   );
 }

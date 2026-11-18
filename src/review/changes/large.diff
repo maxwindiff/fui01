@@ -1,0 +1,1999 @@
+5311564de7f78b16343d4988921ef754117fd62d
+Max Ng
+2026-11-14 15:52:45 -0800
+Add motion levels, breadcrumb and a cheaper stage transition
+
+The top bar gets four motion levels (Still, Quiet, Standard, Lively) and
+a breadcrumb for the case, the current panel and the dossier trail.
+Panels now draw themselves when they come into view, the money flow
+wipes in from its sources, and Lively adds streaming ribbons, pulses and
+count-ups.
+
+The workspace becomes a small external store read through selectors,
+which cuts the update callback of a stage zoom from about 40 ms to 9 ms.
+GPU views hold still while a layout transition runs.
+
+Headers and hints lose most of their explanatory text, "Fig." is gone
+from panel numbers, and no text is italic.
+
+Claude-Session: https://claude.ai/code/session_01Af3daEWcwnK2adxHHA5PiS
+
+
+diff --git a/README.md b/README.md
+index 039c5b0..6ea6873 100644
+--- a/README.md
++++ b/README.md
+@@ -70,19 +70,34 @@ The production build is 184 kB of JavaScript after gzip, plus 31 kB for the stat
+ 
+ ## Motion
+ 
+-Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it with a Replay button. The rules behind it:
++The top bar has four motion levels, kept in `localStorage` and defaulting to Still when the system asks for reduced motion.
+ 
+-- Entry happens once, when a board mounts. Panels arrive in reading order, chart lines draw along their length, and the GPU views reveal ties from source to target. After about four seconds the board drops its `data-entering` attribute, so content shown again later appears without the entry animation.
+-- At rest the only movement is money: dashes or pulses travelling in the direction the money moved. The GPU views add a slow sway so depth reads through parallax, and the sway stops while the pointer is over the view.
+-- Changes of arrangement keep every node on screen and move the camera and the heights together.
+-- `prefers-reduced-motion` turns off entry, sway, travel and layout transitions.
++| Level | What moves |
++|---|---|
++| Still | Nothing. Every change shows at once. |
++| Quiet | Responses only: layout transitions, rows opening, sorted rows travelling, the camera gliding. |
++| Standard | Adds entry. A panel draws itself when it first comes into view or onto the stage, money travels along its ties, and the 3D views sway slowly. |
++| Lively | Adds movement at rest and on return. Money streams through the money flow, key marks pulse, figures count up, the sway widens, and a panel draws itself again each time it comes back into view. |
++
++Changing level replays the entry of the panels on screen, so the levels can be compared on the spot. `motion.ts` holds the level. CSS reads it from `data-motion`, `data-entry` and `data-ambient` on the root, and the GPU code reads `motion.level`.
++
++Each theme carries a motion table in `themes.ts` (`motion`), and the last panel on the sheet lists it. Entry is built like this:
++
++- `Panel` watches itself with one shared `IntersectionObserver`. A panel stays hidden (`data-pending`) until it comes into view, then plays its frame animation once (`data-enter="frame"`). Panels that arrive together are staggered by their order in the batch.
++- A panel that goes onto the stage plays only its content (`data-enter="content"`), after the layout transition has finished.
++- The observer reports a panel as hidden while its own entry clips it to nothing, so the panel's box decides whether it is on screen.
++- Dense charts (timeline, small multiples, the vote strip) wipe in as one piece with a `clip-path`. The money flow wipes from sources to recipients with a clip path on its ribbons, and each column lights as the wipe reaches it.
++- Elements take a `--k` index for left-to-right stagger. `Count` counts a figure up at the Lively level.
++- The GPU views start their reveal once the panel around them is no longer pending.
++- At rest the only movement at Standard is money: dashes or pulses in the direction it moved. The 3D views sway, and the sway stops while the pointer is over the view.
+ 
+ ## Interaction
+ 
+-The last panel also lists the interaction patterns, with a button beside most of them that carries the pattern out. Each pattern is built once and reused.
++The last panel also lists the interaction patterns, with a button beside most of them that carries the pattern out.
+ 
+ | Pattern | Where to try it | How it is built |
+ |---|---|---|
++| Breadcrumb | Top bar | `Crumbs.tsx` reads the workspace: the case, the staged panel (or the panel under the middle of the viewport while the board scrolls), then the dossier trail. Each segment goes back to that level. |
+ | Tooltip | Any chart, entity name, issue code or icon button | `tip.tsx` holds one tooltip for the page. A chart calls `tip.show` with a point and gets an immediate readout. Any element with a `data-tip` attribute gets a text tooltip after 350 ms, and the wait is skipped for 600 ms after a tooltip closes. |
+ | Open a row | Filings table, document list, Open evidence on the finding | `Fold` animates a grid row from `0fr` to `1fr`, which leaves the height to CSS. |
+ | Sort | Column headings of the filings table | `useFlip` records each row's position before the reorder and plays a transform from the old position to the new one. |
+@@ -90,20 +105,29 @@ The last panel also lists the interaction patterns, with a button beside most of
+ | Dossier | Any underlined entity name, a network node, a node in the money flow | `Inspector.tsx` is a drawer fixed to the right edge. The shell pads its right side by the drawer's width, and a container query moves a column from the wide panel of each pair to the narrow one when the board gets tight. |
+ | Linked marks | Small multiples, money flow, footnotes in the document, ranked states beside the map | Hover state held in the component and applied as classes. The money flow follows ribbons upstream and downstream from the mark under the pointer. |
+ | Measure | Drag across the timeline | A brush in the SVG, with counts recomputed from the data on each move. |
+-| Commit | Add to brief, Dismiss | The brief is a list in the workspace state, counted in the top bar. |
++| Commit | Add to brief, Dismiss | The brief is a list in the workspace store, counted in the top bar. |
+ 
+-The two layout changes, staging a panel and opening the dossier, run inside `document.startViewTransition` (`morph` in `workspace.tsx`). Each panel has its own `view-transition-name`, so the browser moves every frame from its old box to its new one. The CSS at the end of `base.css` sets `object-fit: none` on the transition images, so a frame's contents keep their scale while the frame crops or uncovers them, and the old and new pictures swap in the first 45% of the move. Durations come from the theme: 380 ms in Vellum, 560 ms in Orrery.
++The two layout changes, staging a panel and opening the dossier, run inside `document.startViewTransition` (`morph` in `workspace.tsx`). Each panel has its own `view-transition-name`, so the browser moves every frame from its old box to its new one. The CSS at the end of `base.css` sets `object-fit: none` on the transition images, so a frame's contents keep their scale while the frame crops or uncovers them. Durations come from the theme: 380 ms in Vellum, 560 ms in Orrery.
+ 
+ Every panel can be drawn at its place on the board, on the stage, or as a rail tile with a one-line summary (the `glance` prop). An agent composing a layout can rely on each element supporting all of them.
+ 
+-`workspace.tsx` holds the state shared across panels: the staged panel, the dossier trail, the open document, the brief, and a small command channel used by the buttons on the interaction sheet. Escape closes the stage first and the dossier second. The `/` key moves focus to search.
++### Keeping layout transitions cheap
++
++- `workspace.tsx` is a small external store. Components read it through `useWs(selector)` and re-render only when their selection changes, so a change of stage re-renders the panel frames and the breadcrumb and leaves the charts alone. The update callback of a stage transition takes about 9 ms.
++- While a transition runs, `gpuState.paused` stops the GPU views from drawing every frame. They draw once at their new size, and the network camera settles in place instead of gliding.
++- Content entry waits for the transition to finish, so the two do not compete.
++- The page avoids backdrop filters, blend modes over the whole viewport and filter animations, which are costly for a compositor that is already moving large layers.
++
++`workspace.tsx` holds the state shared across panels: the staged panel, the dossier trail, the open document, the brief, the motion level, and a small command channel used by the buttons on the interaction sheet. Escape closes the dossier first and the stage second. The `/` key moves focus to search.
+ 
+ ## Files
+ 
+ ```
+ src/themes.ts            tokens, GPU style, motion table and interaction list
++src/motion.ts            motion levels
++src/panels.ts            panel titles
+ src/data.ts              the invented case file
+-src/workspace.tsx        shared state and the view-transition helper
++src/workspace.tsx        shared store and the view-transition helper
+ src/tip.tsx              the tooltip layer
+ src/gpu/scene.ts         camera, layers, frame loop, buffer writers
+ src/gpu/network.ts       layouts and buffers for the network
+diff --git a/src/App.tsx b/src/App.tsx
+index 00f241f..b920cb8 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,7 +1,11 @@
+ import { useEffect, useState } from "react";
++import type { ReactNode } from "react";
+ import { THEMES, themeById } from "./themes";
+ import type { Theme } from "./themes";
+-import { Panel } from "./components/primitives";
++import { Panel, Segmented } from "./components/primitives";
++import { Crumbs } from "./components/Crumbs";
++import { MOTION_LEVELS } from "./motion";
++import { PANEL_TITLES } from "./panels";
+ import { NetworkView } from "./components/NetworkView";
+ import { MapView } from "./components/MapView";
+ import { Affiliation, PersonCard } from "./components/Person";
+@@ -12,17 +16,13 @@ import { Controls } from "./components/Controls";
+ import { MotionSheet } from "./components/Motion";
+ import { Inspector } from "./components/Inspector";
+ import { TipLayer } from "./tip";
+-import { useWorkspace, WorkspaceProvider } from "./workspace";
++import { getState, useWs, ws } from "./workspace";
+ import { DOCS, FILINGS, fmtMoney, GRAPH, STATE_GIVING, WINDOW_CONTACTS } from "./data";
+ 
+ function Masthead({ theme }: { theme: Theme }) {
+   return (
+     <section className="mast">
+-      <div>
+-        <h1 className="mast-name">{theme.name}</h1>
+-        <p className="mast-concept">{theme.concept}</p>
+-        <p className="note">{theme.mode === "light" ? "Light" : "Dark"} theme. Drawn from: {theme.lineage}. All names and figures on this sheet are invented.</p>
+-      </div>
++      <h1 className="mast-name">{theme.name}</h1>
+       <ul className="swatches">
+         {theme.palette.map((p) => (
+           <li key={p.name}><i style={{ background: `var(${p.var})` }} /><b>{p.name}</b><span>{p.role}</span></li>
+@@ -30,7 +30,7 @@ function Masthead({ theme }: { theme: Theme }) {
+       </ul>
+       <ul className="types">
+         {theme.type.map((t) => (
+-          <li key={t.family}><span className="note">{t.family}, {t.role.toLowerCase()}</span><p style={{ fontFamily: `var(${t.var})` }}>{t.sample}</p></li>
++          <li key={t.family}><span className="note">{t.family}</span><p style={{ fontFamily: `var(${t.var})` }}>{t.sample}</p></li>
+         ))}
+       </ul>
+     </section>
+@@ -38,27 +38,71 @@ function Masthead({ theme }: { theme: Theme }) {
+ }
+ 
+ function BriefMenu() {
+-  const ws = useWorkspace();
++  const brief = useWs((s) => s.brief);
+   return (
+     <div id="brief-list" popover="auto" className="menu">
+-      {ws.brief.length ? (
++      {brief.length ? (
+         <ul>
+-          {ws.brief.map((item) => (
++          {brief.map((item) => (
+             <li key={item}><span>{item}</span><button type="button" className="btn quiet" onClick={() => ws.toggleBrief(item)}>Remove</button></li>
+           ))}
+         </ul>
+-      ) : <p className="note">The brief is empty. Add to brief on a finding, a filing or a dossier puts an item here.</p>}
++      ) : <p className="note">Nothing in the brief yet.</p>}
+     </div>
+   );
+ }
+ 
+-function Sheet() {
++function BriefButton() {
++  const count = useWs((s) => s.brief.length);
++  return (
++    <button type="button" className={`brief${count ? " has" : ""}`} popoverTarget="brief-list" data-tip="Items collected for the written brief">
++      Brief <b key={count} className="num">{count}</b>
++    </button>
++  );
++}
++
++function MotionControl() {
++  const level = useWs((s) => s.level);
++  return (
++    <div className="motion-ctl">
++      <span className="label">Motion</span>
++      <Segmented
++        label="Motion" value={String(level)} onChange={(v) => ws.setLevel(+v)}
++        options={MOTION_LEVELS.map((l) => ({ value: String(l.id), label: l.name, tip: l.what }))}
++      />
++    </div>
++  );
++}
++
++function DocGlance() {
++  const doc = useWs((s) => s.doc);
++  return <>{DOCS.find((d) => d.id === doc)!.title}</>;
++}
++
++function Frame({ children }: { children: ReactNode }) {
++  const stage = useWs((s) => s.stage);
++  const inspecting = useWs((s) => s.trail.length > 0);
++  return (
++    <div className="shell" data-inspect={inspecting ? "" : undefined}>
++      <main className="board" data-stage={stage ?? undefined}>{children}</main>
++      <footer className="foot">All names and figures are invented.</footer>
++    </div>
++  );
++}
++
++const act = (command: string) => {
++  if (command === "stage") ws.setStage("01");
++  else if (command === "dossier") ws.inspect("voss");
++  else if (command === "brush") { ws.reveal("05"); ws.run("brush"); }
++  else { ws.reveal("10"); ws.run(command); }
++};
++const replay = () => { ws.setStage(null); scrollTo({ top: 0 }); ws.replay(); };
++const giving = Object.values(STATE_GIVING).reduce((a, v) => a + v, 0);
++const T = PANEL_TITLES;
++
++export function App() {
+   const [id, setId] = useState(() => themeById(location.hash.slice(1)).id);
+   const theme = themeById(id);
+-  const ws = useWorkspace();
+-  const [run, setRun] = useState(0);
+-  const boardKey = `${theme.id}${run}`;
+-  const [entered, setEntered] = useState("");
+ 
+   useEffect(() => {
+     const root = document.documentElement;
+@@ -72,18 +116,13 @@ function Sheet() {
+     history.replaceState(null, "", `#${theme.id}`);
+   }, [theme]);
+ 
+-  // Entry animations belong to the first seconds of a board. After that, content shown again appears without them.
+-  useEffect(() => {
+-    const t = setTimeout(() => setEntered(boardKey), 4000);
+-    return () => clearTimeout(t);
+-  }, [boardKey]);
+-
+   useEffect(() => {
+     const key = (e: KeyboardEvent) => {
+       if (e.key === "Escape") {
+         if (document.querySelector(":popover-open")) return;
+-        if (ws.stage) ws.setStage(null);
+-        else ws.closeInspector();
++        const { trail, stage } = getState();
++        if (trail.length) ws.closeInspector();
++        else if (stage) ws.setStage(null);
+         return;
+       }
+       if ((e.target as HTMLElement).closest("input, textarea")) return;
+@@ -92,15 +131,7 @@ function Sheet() {
+     };
+     addEventListener("keydown", key);
+     return () => removeEventListener("keydown", key);
+-  }, [ws.stage, ws.setStage, ws.closeInspector]);
+-
+-  const act = (command: string) => {
+-    if (command === "stage") ws.setStage("01");
+-    else if (command === "dossier") ws.inspect("voss");
+-    else if (command === "brush") { ws.reveal("05"); ws.run("brush"); }
+-    else { ws.reveal("10"); ws.run(command); }
+-  };
+-  const giving = Object.values(STATE_GIVING).reduce((a, v) => a + v, 0);
++  }, []);
+ 
+   return (
+     <>
+@@ -112,51 +143,39 @@ function Sheet() {
+         </defs>
+       </svg>
+       <TipLayer />
+-      <nav className="switcher" aria-label="Theme">
+-        {THEMES.map((t, i) => (
+-          <button key={t.id} type="button" className={t.id === id ? "on" : ""} aria-pressed={t.id === id} onClick={() => setId(t.id)}>
+-            <kbd>{i + 1}</kbd>
+-            <i className="sw" style={{ background: t.vars["--bg"] }}><b style={{ background: t.vars["--ink"] }} /><b style={{ background: t.vars["--money"] }} /></i>
+-            {t.name}<span>{t.mode}</span>
+-          </button>
+-        ))}
+-        <p>Keys 1 and 2 switch themes. Esc steps back.</p>
+-        <button type="button" className={`brief${ws.brief.length ? " has" : ""}`} popoverTarget="brief-list" data-tip="Items collected for the written brief">
+-          Brief <b key={ws.brief.length} className="num">{ws.brief.length}</b>
+-        </button>
+-      </nav>
++      <header className="switcher">
++        <div className="themes" role="group" aria-label="Theme">
++          {THEMES.map((t, i) => (
++            <button key={t.id} type="button" className={`theme-btn${t.id === id ? " on" : ""}`} aria-pressed={t.id === id} data-tip={`${t.name}, key ${i + 1}`} onClick={() => setId(t.id)}>
++              <i className="sw" style={{ background: t.vars["--bg"] }}><b style={{ background: t.vars["--ink"] }} /><b style={{ background: t.vars["--money"] }} /></i>
++              {t.name}
++            </button>
++          ))}
++        </div>
++        <Crumbs />
++        <MotionControl />
++        <BriefButton />
++      </header>
+       <BriefMenu />
+-      <div className="shell" data-inspect={ws.trail.length ? "" : undefined}>
+-        <main className="board" key={boardKey} data-stage={ws.stage ?? undefined} data-entering={entered === boardKey ? undefined : ""}>
+-          <Masthead theme={theme} />
+-          <Panel fig="01" title="Relationship network" span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
+-          <Panel fig="02" title="Person" span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
+-          <Panel fig="03" title="Political affiliation" span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
+-          <Panel fig="04" title="Giving by state" meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
+-          <Panel fig="05" title="Timeline and career history" meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
+-          <Panel fig="06" title="Money flow" meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
+-          <Panel fig="07" title="Lobbying spend by quarter" span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
+-          <Panel fig="08" title="Share of giving by recipient" span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
+-          <Panel fig="09" title="Contacts by office, per month" span={8} glance="Six offices over 18 months"><Multiples /></Panel>
+-          <Panel fig="10" title="Lobbying filings" span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
+-          <Panel fig="11" title="Finding" span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
+-          <Panel fig="12" title="Document" span={8} glance={DOCS.find((d) => d.id === ws.doc)!.title}><DocViewer /></Panel>
+-          <Panel fig="13" title="Documents" meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
+-          <Panel fig="14" title="Controls" glance="Search, filters, actions, readouts"><Controls /></Panel>
+-          <Panel fig="15" title="Motion and interaction" glance="Timings and the patterns to try">
+-            <MotionSheet theme={theme} onRun={act} onReplay={() => { ws.setStage(null); scrollTo({ top: 0 }); setRun((n) => n + 1); }} />
+-          </Panel>
+-        </main>
+-      </div>
++      <Frame key={theme.id}>
++        <Masthead theme={theme} />
++        <Panel fig="01" title={T["01"]} span={8} flush glance={`${GRAPH.entities.length} entities, ${GRAPH.ties.length} ties`}><NetworkView theme={theme} /></Panel>
++        <Panel fig="02" title={T["02"]} span={4} glance="Dana Whitcombe, Republican, Arizona"><PersonCard /></Panel>
++        <Panel fig="03" title={T["03"]} span={5} glance="Whitcombe at +0.38 by voting record"><Affiliation /></Panel>
++        <Panel fig="04" title={T["04"]} meta="2024 cycle" span={7} flush glance={`${fmtMoney(giving)} from 48 states`}><MapView theme={theme} /></Panel>
++        <Panel fig="05" title={T["05"]} meta="Jan 2024 to Jun 2026" glance={`${WINDOW_CONTACTS} contacts in the 90 days before the award`}><Timeline /></Panel>
++        <Panel fig="06" title={T["06"]} meta="2024 cycle, $8.27M" span={7} glance="$8.27M through four vehicles"><MoneyFlow /></Panel>
++        <Panel fig="07" title={T["07"]} span={5} glance="Halvorsen peaked at $2.94M in 2025 Q3"><SpendChart /></Panel>
++        <Panel fig="08" title={T["08"]} span={4} glance="Whitcombe, 4% to 19%"><SlopeChart /></Panel>
++        <Panel fig="09" title={T["09"]} span={8} glance="Six offices over 18 months"><Multiples /></Panel>
++        <Panel fig="10" title={T["10"]} span={7} glance={`${FILINGS.length} filings, ${fmtMoney(FILINGS.reduce((a, f) => a + f.amt, 0))} reported`}><FilingsTable /></Panel>
++        <Panel fig="11" title={T["11"]} span={5} glance="Finding 3 of 7, high confidence"><Finding /></Panel>
++        <Panel fig="12" title={T["12"]} span={8} glance={<DocGlance />}><DocViewer /></Panel>
++        <Panel fig="13" title={T["13"]} meta="7 of 1,804" span={4} glance="7 of 1,804 in this view"><DocList /></Panel>
++        <Panel fig="14" title={T["14"]} glance="Search, filters, actions, readouts"><Controls /></Panel>
++        <Panel fig="15" title={T["15"]} glance="Timings and the patterns to try"><MotionSheet theme={theme} onRun={act} onReplay={replay} /></Panel>
++      </Frame>
+       <Inspector />
+     </>
+   );
+ }
+-
+-export function App() {
+-  return (
+-    <WorkspaceProvider>
+-      <Sheet />
+-    </WorkspaceProvider>
+-  );
+-}
+diff --git a/src/components/Charts.tsx b/src/components/Charts.tsx
+index a4acacb..75d47ec 100644
+--- a/src/components/Charts.tsx
++++ b/src/components/Charts.tsx
+@@ -2,7 +2,7 @@ import { useState } from "react";
+ import type { PointerEvent as RPointerEvent } from "react";
+ import { FLOW_NODES, FLOWS, MULTIPLES, MULTIPLES_T0, QUARTERS, SLOPE, SPEND_HALVORSEN, SPEND_NOTES, SPEND_PEER_HI, SPEND_PEER_LO, SPEND_PEER_MED, fmtMoney } from "../data";
+ import { tip, TipRow } from "../tip";
+-import { useWorkspace } from "../workspace";
++import { ws } from "../workspace";
+ import { usePanel, useSize } from "./primitives";
+ 
+ const MONTH = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+@@ -63,7 +63,7 @@ export function SpendChart() {
+           })}
+           <path className="c-line bold" pathLength={1} d={line(SPEND_HALVORSEN)} />
+           {SPEND_HALVORSEN.map((v, i) => (
+-            <circle key={i} className={i === peak ? "c-dot peak" : "c-dot"} cx={x(i)} cy={y(v)} r={i === peak ? 3.4 : 1.7} />
++            <circle key={i} style={{ ["--k" as string]: i }} className={i === peak ? "c-dot peak" : "c-dot"} cx={x(i)} cy={y(v)} r={i === peak ? 3.4 : 1.7} />
+           ))}
+           <text className="c-label strong" x={x(peak)} y={y(SPEND_HALVORSEN[peak]) - 10} textAnchor="middle">{fmtMoney(SPEND_HALVORSEN[peak])}</text>
+           <text className="c-label strong" x={x(n - 1) + 9} y={y(SPEND_HALVORSEN[n - 1]) + 1}>Halvorsen</text>
+@@ -151,10 +151,10 @@ export function Multiples() {
+             <span>{m.name}</span>
+             {at >= 0 ? <span className="mult-at"><span className="dim">{month(at)}</span><b className="num">{m.data[at]}</b></span> : <b className="num">{m.data.reduce((a, v) => a + v, 0)}</b>}
+           </figcaption>
+-          <svg viewBox={`0 0 ${len * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true" onPointerMove={move} onPointerLeave={() => setAt(-1)}>
++          <svg className="wipe" viewBox={`0 0 ${len * 4} ${max}`} preserveAspectRatio="none" aria-hidden="true" onPointerMove={move} onPointerLeave={() => setAt(-1)}>
+             {at >= 0 ? <rect className="mult-col" x={at * 4} y={0} width={4} height={max} /> : null}
+             {m.data.map((v, i) => (
+-              <rect key={i} className={`mult${i >= 10 && i <= 12 ? " key" : ""}${i === at ? " at" : ""}`} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
++              <rect key={i} style={{ ["--k" as string]: i }} className={`mult${i >= 10 && i <= 12 ? " key" : ""}${i === at ? " at" : ""}`} x={i * 4 + 0.5} y={max - v} width={3} height={v} />
+             ))}
+           </svg>
+         </figure>
+@@ -182,7 +182,6 @@ function trace(start: string[], dir: "up" | "down", found = new Set<number>()) {
+ export function MoneyFlow() {
+   const [ref, { w }] = useSize<HTMLDivElement>();
+   const { staged } = usePanel();
+-  const ws = useWorkspace();
+   const [lit, setLit] = useState<Set<number> | null>(null);
+   const H = staged ? 620 : 380, top = 46, nodeW = 9, gap = [16, 30, 12];
+   const lm = 150, rm = 168;
+@@ -216,6 +215,7 @@ export function MoneyFlow() {
+         f, i,
+         hot: hot.has(f.t),
+         d: `M${x0} ${y0}C${mx} ${y0} ${mx} ${y1} ${x1} ${y1}V${y1 + h}C${mx} ${y1 + h} ${mx} ${y0 + h} ${x0} ${y0 + h}Z`,
++        mid: `M${x0} ${y0 + h / 2}C${mx} ${y0 + h / 2} ${mx} ${y1 + h / 2} ${x1} ${y1 + h / 2}`,
+       };
+     });
+   const nodeLit = (id: string) => !lit || FLOWS.some((f, i) => lit.has(i) && (f.s === id || f.t === id));
+@@ -224,9 +224,13 @@ export function MoneyFlow() {
+     <div ref={ref} className="chart flow">
+       {w > 0 ? (
+         <svg width={w} height={H} data-probing={lit !== null} role="img" aria-label="Money flow from four sources through four vehicles to seven recipients, 2024 cycle">
++          <defs>
++            <clipPath id="flow-wipe"><rect className="flow-wipe" x="0" y="0" width={w} height={H} /></clipPath>
++          </defs>
+           {["Source", "Vehicle", "Recipient"].map((label, c) => (
+-            <text key={label} className="c-label" x={c === 0 ? xs[0] + nodeW : c === 1 ? xs[1] : xs[2]} y={11} textAnchor={c === 0 ? "end" : "start"}>{label}</text>
++            <text key={label} className="c-label flow-head" style={{ ["--col" as string]: c }} x={c === 0 ? xs[0] + nodeW : c === 1 ? xs[1] : xs[2]} y={11} textAnchor={c === 0 ? "end" : "start"}>{label}</text>
+           ))}
++          <g clipPath="url(#flow-wipe)">
+           {ribbons.map((rb) => (
+             <path
+               key={rb.i} className={`ribbon${rb.hot ? " hot" : ""}${lit?.has(rb.i) ? " on" : ""}`} d={rb.d}
+@@ -241,12 +245,17 @@ export function MoneyFlow() {
+               onPointerLeave={leave}
+             />
+           ))}
++          {ribbons.map((rb) => (
++            <path key={`s${rb.i}`} className={`flow-stream${rb.hot ? " hot" : ""}${lit?.has(rb.i) ? " on" : ""}`} d={rb.mid} />
++          ))}
++          </g>
+           {FLOW_NODES.map((nd) => {
+             const bx = box.get(nd.id)!;
+             const v = value(nd.id);
+             return (
+               <g
+                 key={nd.id} className={`flow-node sec-${nd.sector}${hot.has(nd.id) ? " hot" : ""}${nodeLit(nd.id) ? "" : " off"}${nd.ent ? " link" : ""}`}
++                style={{ ["--col" as string]: nd.col }}
+                 onPointerEnter={(e) => {
+                   setLit(trace([nd.id], "down", trace([nd.id], "up")));
+                   tip.show(e.currentTarget.querySelector("rect")!, (
+@@ -254,7 +263,6 @@ export function MoneyFlow() {
+                       <b>{nd.name}</b>
+                       {nd.col > 0 ? <TipRow k="Received" v={fmtMoney(total(nd.id, "t"))} /> : null}
+                       {nd.col < 2 ? <TipRow k="Paid out" v={fmtMoney(total(nd.id, "s"))} /> : null}
+-                      {nd.ent ? <span className="tip-foot">Select to open the dossier.</span> : null}
+                     </>
+                   ));
+                 }}
+diff --git a/src/components/Controls.tsx b/src/components/Controls.tsx
+index de3e7aa..23bedc6 100644
+--- a/src/components/Controls.tsx
++++ b/src/components/Controls.tsx
+@@ -1,13 +1,12 @@
+ import { useEffect, useRef, useState } from "react";
+-import { Glyph, PartyChip, Segmented, Spark } from "./primitives";
++import { Count, Glyph, PartyChip, Segmented, Spark } from "./primitives";
+ import type { Kind, Sector } from "../data";
+ import { DOCS, entity, FILINGS, fmtMoney, GRAPH, named, SPARK_CONTACTS, SPARK_MONEY, SPEND_HALVORSEN } from "../data";
+-import { useWorkspace } from "../workspace";
++import { ws } from "../workspace";
+ 
+ interface Hit { key: string; group: string; label: string; sub: string; glyph?: { kind: Kind; sector: Sector }; open: () => void }
+ 
+ function Search() {
+-  const ws = useWorkspace();
+   const [q, setQ] = useState("voss");
+   const [open, setOpen] = useState(false);
+   const [mark, setMark] = useState(0);
+@@ -57,7 +56,7 @@ function Search() {
+       </label>
+       {open && needle ? (
+         <ul className="results" id="search-results" role="listbox">
+-          {hits.length === 0 ? <li className="results-none">Nothing in this case matches. Try a name, a firm or a filing number.</li> : null}
++          {hits.length === 0 ? <li className="results-none">No match</li> : null}
+           {hits.map((h, k) => (
+             <li key={h.key} role="option" aria-selected={k === mark} className={k === mark ? "on" : ""} onPointerEnter={() => setMark(k)} onPointerDown={(e) => { e.preventDefault(); choose(h); }}>
+               {hits[k - 1]?.group !== h.group ? <span className="results-g">{h.group}</span> : <span />}
+@@ -67,9 +66,7 @@ function Search() {
+           ))}
+         </ul>
+       ) : null}
+-      <p className="note">
+-        {needle ? `${count("Entities")} entities, ${count("Documents")} documents and ${count("Filings")} filings match.` : "Press / from anywhere on the board to search."}
+-      </p>
++      {needle ? <p className="note">{count("Entities")} entities, {count("Documents")} documents, {count("Filings")} filings</p> : null}
+     </div>
+   );
+ }
+@@ -162,9 +159,9 @@ export function Controls() {
+       <section>
+         <h4 className="sub-h">Readouts</h4>
+         <dl className="readouts">
+-          <div><dt>Lobbying, 2025</dt><dd><b>$9.39M</b><Spark data={SPEND_HALVORSEN.slice(8)} w={72} /></dd></div>
+-          <div><dt>To subcommittee</dt><dd><b>$2.71M</b><Spark data={SPARK_MONEY} kind="bar" w={72} /></dd></div>
+-          <div><dt>Contacts logged</dt><dd><b>214</b><Spark data={SPARK_CONTACTS} w={72} /></dd></div>
++          <div><dt>Lobbying, 2025</dt><dd><b><Count to={9390} fmt={fmtMoney} /></b><Spark data={SPEND_HALVORSEN.slice(8)} w={72} /></dd></div>
++          <div><dt>To subcommittee</dt><dd><b><Count to={2710} fmt={fmtMoney} /></b><Spark data={SPARK_MONEY} kind="bar" w={72} /></dd></div>
++          <div><dt>Contacts logged</dt><dd><b><Count to={214} /></b><Spark data={SPARK_CONTACTS} w={72} /></dd></div>
+         </dl>
+         <div className="tip static" role="tooltip">
+           <b>Liberty Orbit Fund</b>
+diff --git a/src/components/Crumbs.tsx b/src/components/Crumbs.tsx
+new file mode 100644
+index 0000000..14a4ca6
+--- /dev/null
++++ b/src/components/Crumbs.tsx
+@@ -0,0 +1,62 @@
++import { useEffect, useState } from "react";
++import { entity } from "../data";
++import { PANEL_TITLES } from "../panels";
++import { useWorkspace } from "../workspace";
++
++// The panel under the middle of the viewport, which the breadcrumb names while the board scrolls.
++function useSection(active: boolean) {
++  const [section, setSection] = useState("");
++  useEffect(() => {
++    if (!active) return;
++    let raf = 0;
++    const update = () => {
++      raf = 0;
++      const line = innerHeight * 0.4;
++      for (const el of document.querySelectorAll<HTMLElement>("[data-panel]")) {
++        const r = el.getBoundingClientRect();
++        if (r.top <= line && r.bottom > line) { setSection(el.dataset.panel!); return; }
++      }
++      setSection("");
++    };
++    const queue = () => { raf ||= requestAnimationFrame(update); };
++    update();
++    addEventListener("scroll", queue, { passive: true });
++    addEventListener("resize", queue);
++    return () => {
++      cancelAnimationFrame(raf);
++      removeEventListener("scroll", queue);
++      removeEventListener("resize", queue);
++    };
++  }, [active]);
++  return section;
++}
++
++export function Crumbs() {
++  const ws = useWorkspace();
++  const section = useSection(!ws.stage);
++  const fig = ws.stage ?? section;
++  const last = ws.trail.length - 1;
++  const panelHere = fig && !ws.trail.length;
++  return (
++    <nav className="crumbs" aria-label="Breadcrumb">
++      <ol>
++        <li>
++          <button type="button" aria-current={!fig && !ws.trail.length ? "page" : undefined} onClick={ws.home}>Whitcombe case</button>
++        </li>
++        {fig ? (
++          <li>
++            <button
++              type="button" aria-current={panelHere ? "page" : undefined}
++              onClick={() => (ws.stage ? ws.closeInspector() : ws.reveal(fig))}
++            >{PANEL_TITLES[fig]}</button>
++          </li>
++        ) : null}
++        {ws.trail.map((id, i) => (
++          <li key={`${id}${i}`}>
++            <button type="button" aria-current={i === last ? "page" : undefined} onClick={() => ws.jump(i)}>{entity(id)!.name}</button>
++          </li>
++        ))}
++      </ol>
++    </nav>
++  );
++}
+diff --git a/src/components/Inspector.tsx b/src/components/Inspector.tsx
+index 68af66d..3266194 100644
+--- a/src/components/Inspector.tsx
++++ b/src/components/Inspector.tsx
+@@ -21,22 +21,13 @@ export function Inspector() {
+   return (
+     <aside className="inspector" aria-label="Dossier">
+       <header className="insp-h">
+-        <ol className="trail">
+-          {ws.trail.map((t, i) => (
+-            <li key={`${t}${i}`}>
+-              {i < ws.trail.length - 1
+-                ? <button type="button" onClick={() => ws.jump(i)} data-tip={`Back to ${entity(t)!.name}`}>{entity(t)!.name}</button>
+-                : <span aria-current="true">{entity(t)!.name}</span>}
+-            </li>
+-          ))}
+-        </ol>
++        <p className="insp-kind"><Glyph kind={d.e.kind} sector={d.e.sector} size={15} />{d.e.sector === "gov" ? "Government" : d.e.sector === "corp" ? "Company side" : d.e.sector === "inter" ? "Intermediary" : "Event"}</p>
+         <button type="button" className="panel-x" aria-label="Close the dossier" data-tip="Close (Esc)" onClick={ws.closeInspector}>
+           <svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9" /></svg>
+         </button>
+       </header>
+       <div className="insp-b" ref={body}>
+         <div className="insp-page" key={id}>
+-          <p className="insp-kind"><Glyph kind={d.e.kind} sector={d.e.sector} size={15} />{d.e.sector === "gov" ? "Government" : d.e.sector === "corp" ? "Company side" : d.e.sector === "inter" ? "Intermediary" : "Event"}</p>
+           <h3 className="person-name" tabIndex={-1}>{d.e.name}</h3>
+           {d.e.role ? <p className="person-role">{d.e.role}</p> : null}
+           {d.e.party ? <div className="tags"><PartyChip party={d.e.party} long /></div> : null}
+@@ -61,7 +52,7 @@ export function Inspector() {
+                   </li>
+                 ))}
+               </ol>
+-              {g.minor ? <p className="sub">{g.rows.length ? "and " : ""}{g.minor} minor {g.minor === 1 ? "tie" : "ties"} to background entities</p> : null}
++              {g.minor ? <p className="sub">{g.rows.length ? "+" : ""}{g.minor} minor</p> : null}
+             </section>
+           ))}
+           {d.docs.length ? (
+diff --git a/src/components/MapView.tsx b/src/components/MapView.tsx
+index d27bd24..ecb51a6 100644
+--- a/src/components/MapView.tsx
++++ b/src/components/MapView.tsx
+@@ -1,5 +1,6 @@
+ import { useEffect, useRef, useState } from "react";
+-import { getGpu, reducedMotion, Scene, TOP_DOWN } from "../gpu/scene";
++import { getGpu, Scene, TOP_DOWN } from "../gpu/scene";
++import { motion } from "../motion";
+ import { buildMapBuffers, loadMap, MAP_H, MAP_W, spikeHeight, stateAt } from "../gpu/map";
+ import type { MapModel } from "../gpu/map";
+ import { fmtMoney, MAP_EVENTS, STATE_GIVING } from "../data";
+@@ -7,6 +8,7 @@ import { rgba } from "../themes";
+ import type { Theme } from "../themes";
+ import { Segmented } from "./primitives";
+ import { tip } from "../tip";
++import { useWs } from "../workspace";
+ 
+ const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+ 
+@@ -17,7 +19,8 @@ export function MapView({ theme }: { theme: Theme }) {
+   const [lit, setLit] = useState<string | null>(null);
+   const [space, setSpace] = useState<"flat" | "deep">("deep");
+   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
+-  const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void } | null>(null);
++  const api = useRef<{ setDeep: (on: boolean) => void; light: (code: string | null) => void; replay: () => void } | null>(null);
++  const replays = useWs((s) => s.replays);
+ 
+   useEffect(() => {
+     let gone = false;
+@@ -39,7 +42,7 @@ export function MapView({ theme }: { theme: Theme }) {
+       if (!scene) return;
+       const w = el.clientWidth, h = el.clientHeight;
+       if (!w || !h) return;
+-      const sway = deep && on && !reducedMotion ? deep.sway * 0.5 * Math.sin((idle / deep.swayPeriod) * Math.PI * 2) : 0;
++      const sway = deep && on && motion.level >= 2 ? deep.sway * (motion.level === 3 ? 0.9 : 0.5) * Math.sin((idle / deep.swayPeriod) * Math.PI * 2) : 0;
+       const pitch = TOP_DOWN + ((deep?.mapPitch ?? TOP_DOWN) + tilt - TOP_DOWN) * lift;
+       const k = 1 + 0.04 * lift;
+       scene.lift = lift;
+@@ -110,9 +113,10 @@ export function MapView({ theme }: { theme: Theme }) {
+     api.current = {
+       setDeep(next) {
+         on = next;
+-        if (reducedMotion) { lift = next ? 1 : 0; place(); return; }
++        if (motion.level === 0) { lift = next ? 1 : 0; place(); return; }
+         glide = { from: lift, to: next ? 1 : 0, t0: performance.now() };
+       },
++      replay() { scene?.playReveal(theme.motion.reveal); },
+       light(code) {
+         const next = code && model ? model.states.findIndex((st) => st.code === code) : -1;
+         if (next !== hover) { hover = next; push(); }
+@@ -137,7 +141,7 @@ export function MapView({ theme }: { theme: Theme }) {
+           lift = glide.from + (glide.to - glide.from) * easeInOut(t);
+           if (t >= 1) glide = null;
+           place();
+-        } else if (deep && on && !hovering && !drag && !reducedMotion) {
++        } else if (deep && on && !hovering && !drag && motion.level >= 2) {
+           idle += dt / 1000;
+           place();
+         }
+@@ -182,6 +186,10 @@ export function MapView({ theme }: { theme: Theme }) {
+     };
+   }, [theme]);
+ 
++  useEffect(() => {
++    if (replays) api.current?.replay();
++  }, [replays]);
++
+   const all = Object.entries(STATE_GIVING);
+   const top = all.slice(0, 8);
+   const sum = (xs: [string, number][]) => xs.reduce((a, [, v]) => a + v, 0);
+@@ -201,7 +209,7 @@ export function MapView({ theme }: { theme: Theme }) {
+         <h4 className="sub-h">Largest donor states</h4>
+         <ol className="rank">
+           {top.map(([code, v]) => (
+-            <li key={code} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
++            <li key={code} style={{ ["--k" as string]: top.findIndex(([c]) => c === code) * 2 }} className={lit === code ? "on" : ""} onPointerEnter={() => api.current?.light(code)} onPointerLeave={() => api.current?.light(null)}>
+               <span className="num">{code}</span>
+               <span className="rank-bar"><i style={{ width: `${(v / top[0][1]) * 100}%` }} /></span>
+               <span className="num">{fmtMoney(v)}</span>
+@@ -210,8 +218,8 @@ export function MapView({ theme }: { theme: Theme }) {
+         </ol>
+         <p className="note">Eight states gave {Math.round((sum(top) / sum(all)) * 100)}% of the {fmtMoney(sum(all))} total.</p>
+         <ul className="map-key">
+-          <li className="key-dots"><span><i /><i /><i /></span>{deep?.form === "armillary" ? "Dot height and size are giving" : deep?.form === "strata" ? "Spike height is giving" : "Dot size is giving, $6K to $2.1M"}</li>
+-          <li className="key-line money"><i />Transfer between cities</li>
++          <li className="key-dots"><span><i /><i /><i /></span>{deep?.form === "armillary" ? "Height is giving" : "Spike height is giving"}</li>
++          <li className="key-line money"><i />Transfer</li>
+           <li className="key-ring"><i />Event</li>
+         </ul>
+       </aside>
+diff --git a/src/components/Motion.tsx b/src/components/Motion.tsx
+index d7e965c..7a9ec25 100644
+--- a/src/components/Motion.tsx
++++ b/src/components/Motion.tsx
+@@ -13,12 +13,11 @@ export function MotionSheet({ theme, onReplay, onRun }: { theme: Theme; onReplay
+           <path className="c-rule" d={`M0 ${S}L${S} 0`} />
+           <path className="c-line" pathLength={1} d={`M0 ${S}C${x1 * S} ${S - y1 * S} ${x2 * S} ${S - y2 * S} ${S} 0`} />
+         </svg>
+-        <p className="note">Shared easing. Entries take {m.enter} ms a panel, {m.stagger} ms apart. Changes of layout take {m.layout} ms.</p>
+-        <p className="note">{m.character}</p>
++        <p className="note">Entry {m.enter} ms, layout {m.layout} ms, response {m.hover} ms</p>
+         <button type="button" className="btn" onClick={onReplay}>Replay entry</button>
+       </div>
+       <div>
+-        <h4 className="sub-h">On entry and at rest</h4>
++        <h4 className="sub-h">Entry and rest</h4>
+         <dl className="motion-list">
+           {m.notes.map((n) => (
+             <div key={n.name}>
+@@ -28,7 +27,7 @@ export function MotionSheet({ theme, onReplay, onRun }: { theme: Theme; onReplay
+             </div>
+           ))}
+         </dl>
+-        <h4 className="sub-h">In answer to the reader</h4>
++        <h4 className="sub-h">Response</h4>
+         <dl className="motion-list">
+           {INTERACTIONS.map((n) => (
+             <div key={n.name}>
+diff --git a/src/components/NetworkView.tsx b/src/components/NetworkView.tsx
+index 606da75..bc01095 100644
+--- a/src/components/NetworkView.tsx
++++ b/src/components/NetworkView.tsx
+@@ -1,5 +1,6 @@
+ import { useEffect, useRef, useState } from "react";
+-import { getGpu, reducedMotion, Scene, TOP_DOWN } from "../gpu/scene";
++import { getGpu, gpuState, Scene, TOP_DOWN } from "../gpu/scene";
++import { motion } from "../motion";
+ import type { Camera } from "../gpu/scene";
+ import { buildCoreModel, buildNetBuffers, buildStressModel, pick } from "../gpu/network";
+ import type { NetModel } from "../gpu/network";
+@@ -7,7 +8,7 @@ import { rgba } from "../themes";
+ import type { Theme } from "../themes";
+ import { Glyph, Segmented, usePanel } from "./primitives";
+ import type { Kind, Sector } from "../data";
+-import { useWorkspace } from "../workspace";
++import { useWs, ws } from "../workspace";
+ 
+ type Density = "case" | "5k" | "100k";
+ interface Readout { id?: string; name: string; role?: string; ties: number }
+@@ -69,7 +70,11 @@ class NetController {
+       this.measure();
+       const s = this.scene;
+       if (!this.fitted) this.apply(this.pose(this.deepOn));
+-      else if (s.width && (Math.abs(s.width - this.fitW) > 8 || Math.abs(s.height - this.fitH) > 8)) this.glide(this.pose(this.deepOn), 420);
++      else if (s.width && (Math.abs(s.width - this.fitW) > 8 || Math.abs(s.height - this.fitH) > 8)) {
++        // A layout transition is already moving the frame, so the camera settles in place.
++        if (gpuState.paused) this.apply(this.pose(this.deepOn));
++        else this.glide(this.pose(this.deepOn), 420);
++      }
+       this.fitW = s.width;
+       this.fitH = s.height;
+       this.layout();
+@@ -184,7 +189,7 @@ class NetController {
+   }
+ 
+   private glide(to: Pose, ms: number) {
+-    if (reducedMotion) { this.apply(to); return; }
++    if (motion.level === 0) { this.apply(to); return; }
+     this.tween = { from: { cam: { ...this.scene.cam }, lift: this.scene.lift }, to, t0: performance.now(), ms };
+   }
+ 
+@@ -217,9 +222,9 @@ class NetController {
+       if (t >= 1) this.tween = null;
+       return;
+     }
+-    if (!this.deep || !this.deepOn || this.hovering || this.drag || reducedMotion) return;
++    if (!this.deep || !this.deepOn || this.hovering || this.drag || motion.level < 2) return;
+     this.idle += dt / 1000;
+-    s.cam.yaw = this.restYaw + this.deep.sway * Math.sin((this.idle / this.deep.swayPeriod) * Math.PI * 2);
++    s.cam.yaw = this.restYaw + this.deep.sway * (motion.level === 3 ? 1.8 : 1) * Math.sin((this.idle / this.deep.swayPeriod) * Math.PI * 2);
+     this.layout();
+   };
+ 
+@@ -387,9 +392,9 @@ export function NetworkView({ theme }: { theme: Theme }) {
+   const hover = useRef<HTMLDivElement>(null);
+   const ctl = useRef<NetController | null>(null);
+   const deep = theme.gpu.deep;
+-  const ws = useWorkspace();
+   const { staged } = usePanel();
+-  const inspected = ws.trail[ws.trail.length - 1];
++  const inspected = useWs((s) => s.trail[s.trail.length - 1]);
++  const replays = useWs((s) => s.replays);
+   const [density, setDensity] = useState<Density>("case");
+   const [space, setSpace] = useState<"flat" | "deep">("deep");
+   const [status, setStatus] = useState<"loading" | "ready" | "unsupported">("loading");
+@@ -421,12 +426,16 @@ export function NetworkView({ theme }: { theme: Theme }) {
+     ctl.current?.layout();
+   }, [readout, space, density, staged]);
+ 
++  useEffect(() => {
++    if (replays) ctl.current?.scene.playReveal(theme.motion.reveal);
++  }, [replays]);
++
+   // The dossier and the network follow one another while the dossier is open.
+   useEffect(() => {
+     if (inspected && status === "ready") ctl.current?.selectId(inspected);
+   }, [inspected, status]);
+   useEffect(() => {
+-    if (readout?.id && ws.trail.length) ws.inspect(readout.id);
++    if (readout?.id && inspected) ws.inspect(readout.id);
+   }, [readout]);
+ 
+   const change = (d: Density) => {
+@@ -437,9 +446,6 @@ export function NetworkView({ theme }: { theme: Theme }) {
+     setSpace(v);
+     ctl.current?.setDeep(v === "deep");
+   };
+-  const hint = deep && space === "deep"
+-    ? "Select a node to isolate its ties. Drag to turn, Shift-drag to pan, pinch or Ctrl-scroll to zoom."
+-    : "Select a node to isolate its ties. Drag to pan, pinch or Ctrl-scroll to zoom.";
+ 
+   return (
+     <div className="viz net" data-dense={density !== "case"}>
+@@ -456,27 +462,25 @@ export function NetworkView({ theme }: { theme: Theme }) {
+         ))}
+         <li className="key-line money"><i />Money</li>
+         <li className="key-line contact"><i />Contact</li>
+-        {deep?.form === "armillary" ? <li className="key-line stem"><i />Stem height is weight in the case</li> : null}
++        {deep?.form === "armillary" ? <li className="key-line stem"><i />Stem height is weight</li> : null}
+       </ul>
+       <div className="viz-tr" data-keepout>
+-        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0] }, { value: "deep", label: deep.labels[1] }]} /> : null}
++        {deep ? <Segmented label="Arrangement" value={space} onChange={changeSpace} options={[{ value: "flat", label: deep.labels[0], tip: "Drag to pan" }, { value: "deep", label: deep.labels[1], tip: "Drag to turn, Shift-drag to pan" }]} /> : null}
+         <Segmented label="Graph size" value={density} onChange={change} options={[{ value: "case", label: "Case file" }, { value: "5k", label: "5,000" }, { value: "100k", label: "100,000" }]} />
+         <div className="viz-zoom">
+-          <button type="button" aria-label="Zoom in" onClick={() => ctl.current?.zoom(1.35)}>+</button>
++          <button type="button" aria-label="Zoom in" data-tip="Zoom in (Ctrl-scroll)" onClick={() => ctl.current?.zoom(1.35)}>+</button>
+           <button type="button" aria-label="Zoom out" onClick={() => ctl.current?.zoom(1 / 1.35)}>&minus;</button>
+-          <button type="button" className="wide" onClick={() => ctl.current?.fit()}>Fit</button>
++          <button type="button" className="wide" data-tip="Fit to view" onClick={() => ctl.current?.fit()}>Fit</button>
+         </div>
+       </div>
+       <div className="viz-bl" data-keepout>
+         {readout ? (
+           <p className="readout">
+             <b>{readout.name}</b>
+-            <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} direct ties shown, the rest dimmed.</span>
++            <span>{readout.role ? `${readout.role}. ` : ""}{readout.ties} ties</span>
+             {readout.id && inspected !== readout.id ? <button type="button" className="btn" onClick={() => ws.inspect(readout.id!)}>Open dossier</button> : null}
+           </p>
+-        ) : (
+-          <p className="readout"><span>{hint}</span></p>
+-        )}
++        ) : null}
+       </div>
+       <dl className="viz-br" data-keepout>
+         {stats ? (
+diff --git a/src/components/Person.tsx b/src/components/Person.tsx
+index 72b086a..dc16516 100644
+--- a/src/components/Person.tsx
++++ b/src/components/Person.tsx
+@@ -1,5 +1,5 @@
+ import { CONNECTIONS, fmtMoney, LEAN, LEAN_FOCUS, SEATS, SPARK_CONTACTS, SPARK_MONEY, VOTES } from "../data";
+-import { Ent, PartyChip, Spark, useSize } from "./primitives";
++import { Count, Ent, PartyChip, Spark, useSize } from "./primitives";
+ 
+ function Portrait() {
+   return (
+@@ -43,19 +43,19 @@ export function PersonCard() {
+       <dl className="facts">
+         <div>
+           <dt>From this network</dt>
+-          <dd><b>$1.96M</b><Spark data={SPARK_MONEY} kind="bar" accent /></dd>
++          <dd><b><Count to={1960} fmt={fmtMoney} /></b><Spark data={SPARK_MONEY} kind="bar" accent /></dd>
+           <dd className="sub">2024 cycle, gifts and ads. Peak in Sep 2025.</dd>
+         </div>
+         <div>
+           <dt>Logged contacts</dt>
+-          <dd><b>74</b><Spark data={SPARK_CONTACTS} /></dd>
++          <dd><b><Count to={74} /></b><Spark data={SPARK_CONTACTS} /></dd>
+           <dd className="sub">Office calendar and lobbying reports, 16 months.</dd>
+         </div>
+       </dl>
+       <h4 className="sub-h">Strongest ties</h4>
+       <ol className="ties">
+         {CONNECTIONS.map((c) => (
+-          <li key={c.id}>
++          <li key={c.id} style={{ ["--k" as string]: CONNECTIONS.indexOf(c) * 3 }}>
+             <Ent kind={c.kind} sector={c.sector} id={c.id}>{c.name}</Ent>
+             <span className="ties-note">{c.note}</span>
+             <span className="ties-bar"><i style={{ width: `${(c.v / max) * 100}%` }} /></span>
+@@ -78,7 +78,7 @@ function LeanAxis() {
+   return (
+     <div ref={ref} className="chart">
+       {w > 0 ? (
+-        <svg width={w} height={h} role="img" aria-label="Voting record position of each senator, Whitcombe at plus 0.38">
++        <svg className="wipe" width={w} height={h} role="img" aria-label="Voting record position of each senator, Whitcombe at plus 0.38">
+           <path className="c-axis" d={`M8 50.5H${w - 8}`} />
+           <path className="c-tick" d={`M${x(0)} 44V57`} />
+           {LEAN.map((d, i) => (
+@@ -118,7 +118,7 @@ function Hemicycle() {
+       {pos.map((p, i) => {
+         const s = SEATS[i];
+         return (
+-          <g key={i} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
++          <g key={i} style={{ ["--k" as string]: i }} className={`seat party-${s.party}${s.focus ? " focus" : ""}`} data-tip-now="" data-tip={`${s.focus ? "Dana Whitcombe, chair. " : ""}${PARTY[s.party]} seat${s.funded ? ", took money from this network" : ", no money from this network"}`}>
+             {s.funded ? <circle className="seat-ring" cx={p.x} cy={p.y} r="9.6" /> : null}
+             <circle className="seat-dot" cx={p.x} cy={p.y} r="6" />
+             {s.focus ? <path className="seat-mark" d={`M${p.x - 3} ${p.y}h6M${p.x} ${p.y - 3}v6`} /> : null}
+@@ -131,10 +131,10 @@ function Hemicycle() {
+ 
+ function VoteStrip() {
+   return (
+-    <svg className="votes" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
++    <svg className="votes wipe" viewBox={`0 0 ${VOTES.length * 6} 30`} preserveAspectRatio="none" role="img" aria-label="Last 56 votes, with or against party">
+       <path className="c-axis" d={`M0 15H${VOTES.length * 6}`} vectorEffect="non-scaling-stroke" />
+       {VOTES.map((v, i) =>
+-        <g key={i} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
++        <g key={i} style={{ ["--k" as string]: i }} data-tip-now="" data-tip={`Vote ${i + 1} of ${VOTES.length}: ${v.v === 0 ? "absent" : v.v > 0 ? "with the party" : "against the party"}${v.key ? ", on S. 2114" : ""}`}>
+           <rect className="c-hit" x={i * 6} y={0} width={6} height={30} />
+           {v.v === 0
+             ? <rect className="vote absent" x={i * 6 + 1.5} y={14} width={2} height={2} />
+@@ -157,13 +157,13 @@ export function Affiliation() {
+         <div>
+           <h4 className="sub-h">Subcommittee on Space Procurement</h4>
+           <p className="seat-count"><PartyChip party="D" /> <b className="num">9</b> <PartyChip party="I" /> <b className="num">1</b> <PartyChip party="R" /> <b className="num">11</b></p>
+-          <p className="note">Ringed seats took money from this network: 6 of 11 Republicans, 3 of 9 Democrats and the Independent. Whitcombe holds the crossed seat.</p>
++          <p className="note">Ringed seats took money from this network: 6 of 11 Republicans, 3 of 9 Democrats and the Independent.</p>
+         </div>
+       </section>
+       <section>
+         <h4 className="sub-h">Last 56 votes</h4>
+         <VoteStrip />
+-        <p className="note">Up is with the party, down is against. The four marked votes concern S. 2114. She broke with her party on one of them.</p>
++        <p className="note">Marked votes concern S. 2114. She broke with her party on one.</p>
+       </section>
+     </div>
+   );
+diff --git a/src/components/Records.tsx b/src/components/Records.tsx
+index e0c0583..42830f0 100644
+--- a/src/components/Records.tsx
++++ b/src/components/Records.tsx
+@@ -2,7 +2,7 @@ import { useState } from "react";
+ import type { ReactNode } from "react";
+ import { DOCS, entity, FILINGS, filingDetail, PRIOR_CONTACTS, WINDOW_CONTACTS, fmtMoney } from "../data";
+ import type { Filing } from "../data";
+-import { useCommand, useWorkspace } from "../workspace";
++import { useCommand, useWs, ws } from "../workspace";
+ import { Ent, Fold, useFlip } from "./primitives";
+ 
+ type SortKey = "q" | "reg" | "lob" | "amt";
+@@ -15,11 +15,11 @@ const COLUMNS: { key?: SortKey; label: string; r?: boolean; first: 1 | -1 }[] =
+ ];
+ 
+ function FilingDetail({ f }: { f: Filing }) {
+-  const ws = useWorkspace();
++  const brief = useWs((s) => s.brief);
+   const d = filingDetail(f);
+   const max = Math.max(...d.series.map((g) => g.amt));
+   const item = `Filing ${f.id}`;
+-  const inBrief = ws.brief.includes(item);
++  const inBrief = brief.includes(item);
+   return (
+     <div className="gt-detail">
+       <section>
+@@ -102,7 +102,7 @@ export function FilingsTable() {
+       {rows.map((f) => {
+         const isOpen = open.has(f.id);
+         return (
+-          <div key={f.id} className={`gt-item${f.focus ? " sel" : ""}`} data-flip={f.id} data-open={isOpen}>
++          <div key={f.id} className={`gt-item${f.focus ? " sel" : ""}`} style={{ ["--k" as string]: FILINGS.indexOf(f) * 2 }} data-flip={f.id} data-open={isOpen}>
+             <div
+               className="gt-row" role="row" tabIndex={0} aria-expanded={isOpen}
+               onClick={() => toggle(f.id)}
+@@ -125,7 +125,7 @@ export function FilingsTable() {
+           </div>
+         );
+       })}
+-      <p className="gt-foot">Filled marks are lobbyists who held a federal post in the previous five years. Select a row for the names.</p>
++      <p className="gt-foot">Filled: held a federal post in the last five years.</p>
+     </div>
+   );
+ }
+@@ -184,7 +184,7 @@ function Email() {
+ }
+ 
+ export function DocViewer() {
+-  const { doc } = useWorkspace();
++  const doc = useWs((s) => s.doc);
+   const d = DOCS.find((x) => x.id === doc)!;
+   return (
+     <article className="doc" key={doc}>
+@@ -208,7 +208,7 @@ export function DocViewer() {
+           <div className="doc-cols">
+             <div className="doc-body">{d.excerpt.map((p, i) => <p key={i}>{p}</p>)}</div>
+             <ol className="doc-notes">
+-              <li className="plain">No notes on this document yet. {d.ents} entities were recognised in it, {d.about.length} of them in this case.</li>
++              <li className="plain">{d.ents} entities recognised, {d.about.length} in this case.</li>
+             </ol>
+           </div>
+         </>
+@@ -218,12 +218,12 @@ export function DocViewer() {
+ }
+ 
+ export function DocList() {
+-  const ws = useWorkspace();
++  const current = useWs((s) => s.doc);
+   const [open, setOpen] = useState<string | null>(null);
+   return (
+     <ul className="doclist">
+       {DOCS.map((d) => (
+-        <li key={d.id} className={d.id === ws.doc ? "sel" : ""} data-open={open === d.id}>
++        <li key={d.id} className={d.id === current ? "sel" : ""} style={{ ["--k" as string]: DOCS.indexOf(d) * 2 }} data-open={open === d.id}>
+           <button type="button" className="doc-row" aria-expanded={open === d.id} onClick={() => setOpen(open === d.id ? null : d.id)}>
+             <span className="doctype">{d.type}</span>
+             <span className="doc-title">{d.title}</span>
+@@ -241,7 +241,7 @@ export function DocList() {
+                 {d.about.slice(0, 4).map((id) => { const e = entity(id)!; return <Ent key={id} kind={e.kind} sector={e.sector} id={id}>{e.name}</Ent>; })}
+               </div>
+               <div className="actions">
+-                <button type="button" className="btn" disabled={d.id === ws.doc} onClick={() => ws.openDoc(d.id)}>{d.id === ws.doc ? "Shown in the document panel" : "Open document"}</button>
++                <button type="button" className="btn" disabled={d.id === current} onClick={() => ws.openDoc(d.id)}>{d.id === current ? "Shown in the document panel" : "Open document"}</button>
+               </div>
+             </div>
+           </Fold>
+@@ -259,11 +259,11 @@ const EVIDENCE = [
+ ];
+ 
+ export function Finding() {
+-  const ws = useWorkspace();
++  const brief = useWs((s) => s.brief);
+   const [evidence, setEvidence] = useState(false);
+   const [dismissed, setDismissed] = useState(false);
+   const item = "Finding 3";
+-  const inBrief = ws.brief.includes(item);
++  const inBrief = brief.includes(item);
+   return (
+     <div className="finding" data-dismissed={dismissed}>
+       <p className="finding-n">
+diff --git a/src/components/Timeline.tsx b/src/components/Timeline.tsx
+index 34c4d64..bae81ce 100644
+--- a/src/components/Timeline.tsx
++++ b/src/components/Timeline.tsx
+@@ -91,13 +91,13 @@ export function Timeline() {
+           </>
+         ) : (
+           <>
+-            <span>Drag across the timeline to measure a window.</span>
+-            <button type="button" className="btn quiet" onClick={() => setBrush(TL_WINDOW)}>Measure the 90 days before the award</button>
++            <span>Drag to measure</span>
++            <button type="button" className="btn quiet" onClick={() => setBrush(TL_WINDOW)}>90 days before the award</button>
+           </>
+         )}
+       </p>
+       {w > 0 ? (
+-        <svg width={w} height={H} role="img" aria-label="Timeline of contacts, gifts, legislative steps, events and Petra Voss's career, January 2024 to June 2026">
++        <svg className="wipe" width={w} height={H} role="img" aria-label="Timeline of contacts, gifts, legislative steps, events and Petra Voss's career, January 2024 to June 2026">
+           <rect className="tl-window" x={x(TL_WINDOW.a)} y={22} width={x(TL_WINDOW.b) - x(TL_WINDOW.a)} height={H - 22} />
+           {months.map((t, i) => {
+             const d = new Date(t);
+@@ -125,7 +125,7 @@ export function Timeline() {
+           ))}
+ 
+           {TL_CONTACTS.map((c, i) => (
+-            <rect key={i} className={`tl-contact${c.key ? " key" : ""}`} x={x(c.t) - 1.25} y={lane("contacts").y + lane("contacts").h - c.n * 7.5 * k} width={2.5} height={c.n * 7.5 * k} />
++            <rect key={i} style={{ ["--k" as string]: i }} className={`tl-contact${c.key ? " key" : ""}`} x={x(c.t) - 1.25} y={lane("contacts").y + lane("contacts").h - c.n * 7.5 * k} width={2.5} height={c.n * 7.5 * k} />
+           ))}
+           <text className="c-label strong accent" x={x(TL_WINDOW.a) - 6} y={lane("contacts").y + 10} textAnchor="end">
+             {WINDOW_CONTACTS} contacts in the 90 days before the award
+@@ -135,7 +135,7 @@ export function Timeline() {
+             const l = lane("gifts");
+             const top = l.y + l.h - 4 - Math.sqrt(g.v / maxGift) * (l.h - 14);
+             return (
+-              <g key={i} className="tl-gift">
++              <g key={i} className="tl-gift" style={{ ["--k" as string]: i * 3 }}>
+                 <path d={`M${x(g.t).toFixed(1)} ${l.y + l.h}V${top.toFixed(1)}`} />
+                 <circle cx={x(g.t)} cy={top} r={2 + Math.sqrt(g.v / maxGift) * 3.2} />
+                 {g.v === maxGift ? <text className="c-label strong" x={x(g.t) - 9} y={top + 4} textAnchor="end">{fmtMoney(g.v)}</text> : null}
+@@ -173,7 +173,7 @@ export function Timeline() {
+             const xa = Math.max(left, x(c.a));
+             const wide = x(c.b) - xa > c.text.length * 7 + 16;
+             return (
+-              <g key={i} className={`tl-career sec-${c.sector}`}>
++              <g key={i} className={`tl-career sec-${c.sector}`} style={{ ["--k" as string]: i * 6 }}>
+                 <rect x={xa} y={l.y + 5 + i * 20 * k} width={x(c.b) - xa} height={14} />
+                 {wide ? <text className="tl-career-label" x={xa + 6} y={l.y + 16 + i * 20 * k}>{c.text}<tspan className="tl-career-sub" dx="10">{c.sub}</tspan></text> : null}
+               </g>
+diff --git a/src/components/primitives.tsx b/src/components/primitives.tsx
+index 1c51220..f1be6a2 100644
+--- a/src/components/primitives.tsx
++++ b/src/components/primitives.tsx
+@@ -1,10 +1,10 @@
+-import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
++import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+ import type { CSSProperties, ReactNode } from "react";
+ import { entity, GRAPH } from "../data";
+ import type { Kind, Party, Sector } from "../data";
+-import { reducedMotion } from "../gpu/scene";
++import { motion } from "../motion";
+ import { tip } from "../tip";
+-import { useWorkspace } from "../workspace";
++import { useWs, ws } from "../workspace";
+ 
+ export function useSize<T extends HTMLElement>() {
+   const ref = useRef<T>(null);
+@@ -53,14 +53,14 @@ export function EntCard({ id }: { id: string }) {
+     <>
+       <span className="tip-ent"><Glyph kind={e.kind} sector={e.sector} size={13} /><b>{e.name}</b></span>
+       {e.role ? <span>{e.role}</span> : null}
+-      <span className="tip-foot">{KIND_NAME[e.kind]}, {ties} ties in this case. Select to open the dossier.</span>
++      <span className="tip-foot">{KIND_NAME[e.kind]}, {ties} ties</span>
+     </>
+   );
+ }
+ 
+ // With an id the name becomes a control: pointing at it shows a card and selecting it opens the dossier.
+ export function Ent({ kind, sector, id, bare, children }: { kind: Kind; sector: Sector; id?: string; bare?: boolean; children: ReactNode }) {
+-  const ws = useWorkspace();
++  const on = useWs((s) => s.trail[s.trail.length - 1] === id);
+   if (!id) {
+     return (
+       <span className="ent">
+@@ -71,7 +71,7 @@ export function Ent({ kind, sector, id, bare, children }: { kind: Kind; sector:
+   }
+   return (
+     <button
+-      type="button" className={`ent link${ws.trail[ws.trail.length - 1] === id ? " on" : ""}`}
++      type="button" className={`ent link${on ? " on" : ""}`}
+       onClick={(e) => { e.stopPropagation(); tip.hide(); ws.inspect(id); }}
+       onPointerEnter={(e) => tip.show(e.currentTarget, <EntCard id={id} />, { card: true, wait: true })}
+       onPointerLeave={tip.hide}
+@@ -103,7 +103,7 @@ export function Spark({ data, w = 96, h = 22, kind = "line", accent }: { data: n
+     return (
+       <svg className={`spark${accent ? " accent" : ""}`} width={w} height={h} aria-hidden="true">
+         {data.map((v, i) => (
+-          <rect key={i} className={i === peak ? "spark-peak" : "spark-bar"} x={2 + (i * (w - 4)) / data.length} y={py(v)} width={bw} height={Math.max(0.75, h - 2 - py(v))} />
++          <rect key={i} className={i === peak ? "spark-bar spark-peak" : "spark-bar"} style={{ ["--k" as string]: i }} x={2 + (i * (w - 4)) / data.length} y={py(v)} width={bw} height={Math.max(0.75, h - 2 - py(v))} />
+         ))}
+       </svg>
+     );
+@@ -117,23 +117,102 @@ export function Spark({ data, w = 96, h = 22, kind = "line", accent }: { data: n
+   );
+ }
+ 
+-const PanelCtx = createContext({ staged: false });
++const PanelCtx = createContext({ staged: false, plays: 0 });
+ export const usePanel = () => useContext(PanelCtx);
+ 
++// One observer serves every panel, so panels that come into view together arrive in the same batch and can be staggered.
++type Seen = (visible: boolean, order: number) => void;
++const watchers = new Map<Element, Seen>();
++const inView = new Set<string>();
++let observer: IntersectionObserver | null = null;
++function watch(el: Element, fn: Seen) {
++  observer ??= new IntersectionObserver((batch) => {
++    let k = 0;
++    for (const e of batch) watchers.get(e.target)?.(e.isIntersecting, e.isIntersecting ? k++ : 0);
++  }, { threshold: 0.05 });
++  watchers.set(el, fn);
++  observer.observe(el);
++  return () => { watchers.delete(el); observer!.unobserve(el); };
++}
++
+ // A panel renders at its place on the board, on the stage, or as a tile in the rail beside the stage.
++// Its entry plays when it first comes into view ("frame") and again when it goes onto the stage ("content").
+ export function Panel({
+   fig, title, meta, glance, span = 12, children, flush,
+ }: {
+   fig: string; title: string; meta?: ReactNode; glance?: ReactNode; span?: number; children: ReactNode; flush?: boolean;
+ }) {
+-  const ws = useWorkspace();
+-  const staged = ws.stage === fig;
+-  const tile = ws.stage !== null && !staged;
++  const staged = useWs((s) => s.stage === fig);
++  const tile = useWs((s) => s.stage !== null && s.stage !== fig);
++  const replays = useWs((s) => s.replays);
++  const el = useRef<HTMLElement>(null);
++  const [enter, setEnter] = useState<"frame" | "content" | null>(null);
++  const [pending, setPending] = useState(motion.level >= 2);
++  const [order, setOrder] = useState(0);
++  const [plays, setPlays] = useState(0);
++  const st = useRef({ seen: false, visible: false, tile, staged, timer: 0, raf: 0 });
++  st.current.tile = tile;
++  st.current.staged = staged;
++
++  const arm = useCallback((kind: "frame" | "content", k: number) => {
++    const s = st.current;
++    if (motion.level < 2) return;
++    s.seen = true;
++    clearTimeout(s.timer);
++    cancelAnimationFrame(s.raf);
++    setEnter(null);
++    // The attribute goes on a frame later, which restarts the animations when an entry is still running.
++    s.raf = requestAnimationFrame(() => {
++      setPending(false);
++      setOrder(k);
++      setEnter(kind);
++      setPlays((n) => n + 1);
++      s.timer = window.setTimeout(() => setEnter(null), 5200);
++    });
++  }, []);
++
++  // The observer reports a panel as hidden while its own entry clips it to nothing, so the panel's box decides.
++  const onscreen = useCallback(() => {
++    const r = el.current!.getBoundingClientRect();
++    return r.bottom > 0 && r.top < innerHeight;
++  }, []);
++
++  useEffect(() => {
++    const s = st.current;
++    const stop = watch(el.current!, (hit, k) => {
++      const on = hit || onscreen();
++      s.visible = on;
++      if (on) inView.add(fig); else inView.delete(fig);
++      if (s.tile) return;
++      if (on && !s.seen) arm("frame", k);
++      if (!on && motion.level === 3 && s.seen) { s.seen = false; setPending(true); }
++    });
++    return () => { stop(); inView.delete(fig); clearTimeout(s.timer); cancelAnimationFrame(s.raf); };
++  }, [fig, arm, onscreen]);
++
++  const was = useRef({ tile, staged, replays });
++  useEffect(() => {
++    const s = st.current, prev = was.current;
++    was.current = { tile, staged, replays };
++    if (motion.level < 2) { setPending(false); setEnter(null); s.seen = true; return; }
++    if (replays !== prev.replays) {
++      s.seen = false;
++      if (onscreen() && !tile) arm(staged ? "content" : "frame", [...inView].filter((f) => f < fig).length);
++      else setPending(true);
++    } else if (staged && !prev.staged) arm("content", 0);
++    else if (prev.tile && !tile && onscreen() && !s.seen) arm("content", 0);
++  }, [tile, staged, replays, fig, arm, onscreen]);
++
++  const ctx = useMemo(() => ({ staged, plays }), [staged, plays]);
+   // In a tight board the wide panel of a pair gives up a column and the narrow one gains it.
+   const tight = span === 8 ? 7 : span === 4 ? 5 : span < 12 ? 6 : 12;
+-  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: parseInt(fig, 10) } as CSSProperties;
++  const style = { ["--span"]: span, ["--span-tight"]: tight, viewTransitionName: `panel-${fig}`, ["--i"]: order } as CSSProperties;
+   return (
+-    <section className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style} onClick={tile ? () => ws.setStage(fig) : undefined}>
++    <section
++      ref={el} className={`panel${staged ? " staged" : ""}${tile ? " tile" : ""}`} data-panel={fig} style={style}
++      data-enter={enter ?? undefined} data-pending={pending && !enter ? "" : undefined}
++      onClick={tile ? () => ws.setStage(fig) : undefined}
++    >
+       <header className="panel-h">
+         <span className="panel-fig" aria-hidden="true">{fig}</span>
+         <h2 className="panel-title">{title}</h2>
+@@ -149,7 +228,7 @@ export function Panel({
+         </button>
+         {tile && glance ? <p className="panel-glance">{glance}</p> : null}
+       </header>
+-      <PanelCtx.Provider value={{ staged }}>
++      <PanelCtx.Provider value={ctx}>
+         <div className={`panel-b${flush ? " flush" : ""}`} inert={tile}>{children}</div>
+       </PanelCtx.Provider>
+       <i className="corner tl" /><i className="corner tr" /><i className="corner bl" /><i className="corner br" />
+@@ -157,6 +236,25 @@ export function Panel({
+   );
+ }
+ 
++// A figure that counts up from zero each time its panel plays an entry, at the Lively level.
++export function Count({ to, fmt = (v) => String(Math.round(v)) }: { to: number; fmt?: (v: number) => string }) {
++  const { plays } = usePanel();
++  const [v, setV] = useState(to);
++  useEffect(() => {
++    if (motion.level < 3 || !plays) { setV(to); return; }
++    let raf = 0;
++    const t0 = performance.now() + 300;
++    const step = (now: number) => {
++      const t = Math.max(0, Math.min(1, (now - t0) / 900));
++      setV(to * (1 - Math.pow(1 - t, 3)));
++      if (t < 1) raf = requestAnimationFrame(step);
++    };
++    raf = requestAnimationFrame(step);
++    return () => cancelAnimationFrame(raf);
++  }, [plays, to]);
++  return <>{fmt(v)}</>;
++}
++
+ // A region that opens in place. The row template animates from 0fr to 1fr, so the height needs no measuring.
+ export function Fold({ open, children, className = "" }: { open: boolean; children: ReactNode; className?: string }) {
+   return (
+@@ -173,7 +271,7 @@ export function useFlip<T extends HTMLElement>(order: unknown) {
+   useLayoutEffect(() => {
+     const was = before.current;
+     before.current = null;
+-    if (!was || !ref.current || reducedMotion) return;
++    if (!was || !ref.current || motion.level === 0) return;
+     const css = getComputedStyle(document.documentElement);
+     const duration = parseFloat(css.getPropertyValue("--dur-sort")) || 320;
+     const easing = css.getPropertyValue("--ease").trim() || "ease";
+@@ -188,11 +286,11 @@ export function useFlip<T extends HTMLElement>(order: unknown) {
+   return [ref, capture] as const;
+ }
+ 
+-export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string }) {
++export function Segmented<T extends string>({ value, options, onChange, label }: { value: T; options: { value: T; label: string; tip?: string }[]; onChange: (v: T) => void; label: string }) {
+   return (
+     <div className="seg" role="radiogroup" aria-label={label}>
+       {options.map((o) => (
+-        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} onClick={() => onChange(o.value)}>
++        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} className={o.value === value ? "on" : ""} data-tip={o.tip} onClick={() => onChange(o.value)}>
+           {o.label}
+         </button>
+       ))}
+diff --git a/src/gpu/scene.ts b/src/gpu/scene.ts
+index e2ba10a..7eb9c7b 100644
+--- a/src/gpu/scene.ts
++++ b/src/gpu/scene.ts
+@@ -1,9 +1,10 @@
+-import { clock, draw, frameLoop, init, storage, surface } from "vgpu";
++import { draw, frameLoop, init, storage, surface } from "vgpu";
+ import type { Draw, Gpu, StorageBuffer, Surface } from "vgpu";
+ import marksShader from "./shaders/marks.wgsl";
+ import segsShader from "./shaders/segments.wgsl";
+ import quadsShader from "./shaders/quads.wgsl";
+ import type { RGBA } from "../themes";
++import { motion, onMotionChange } from "../motion";
+ 
+ export const MARK_FLOATS = 16;
+ export const SEG_FLOATS = 20;
+@@ -60,17 +61,26 @@ export function getGpu(): Promise<Gpu> {
+ }
+ 
+ const scenes = new Set<Scene>();
+-export const reducedMotion = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
++// Set while a layout transition runs, so the views draw only when something changes.
++export const gpuState = { paused: false };
++export function wakeScenes() { for (const scene of scenes) scene.dirty = true; }
++onMotionChange(wakeScenes);
+ 
+ function start(gpu: Gpu) {
+-  const time = clock(gpu);
++  // Seconds of travel for dashes and pulses. The clock runs faster at the Lively level and stops below Standard.
++  let travel = 0;
++  let prev = performance.now();
+   frameLoop(gpu, (frame) => {
+     const now = performance.now();
++    const ambient = motion.level >= 2;
++    const moving = ambient && !gpuState.paused;
++    if (moving) travel += (Math.min(100, now - prev) / 1000) * (motion.level === 3 ? 1.6 : 1);
++    prev = now;
+     for (const scene of scenes) {
+       if (!scene.visible) continue;
+       scene.tick(now);
+-      if (!scene.dirty && !(scene.animated && !reducedMotion)) continue;
+-      scene.encode(frame, reducedMotion ? 0 : time.time, now);
++      if (!scene.dirty && !(scene.animated && moving)) continue;
++      scene.encode(frame, ambient ? travel : 0, now);
+     }
+   });
+ }
+@@ -134,19 +144,24 @@ export class Scene {
+   }
+ 
+   playReveal(ms: number) {
+-    if (reducedMotion || ms <= 0) { this.reveal = 1; return; }
++    if (motion.level < 2 || ms <= 0) { this.reveal = 1; this.revealMs = 0; this.dirty = true; return; }
+     this.reveal = 0;
+-    this.revealFrom = performance.now();
++    this.revealFrom = 0;
+     this.revealMs = ms;
++    this.dirty = true;
+   }
+ 
+   tick(now: number) {
+     const dt = this.lastTick ? Math.min(100, now - this.lastTick) : 16;
+     this.lastTick = now;
+     if (this.revealMs) {
+-      const t = (now - this.revealFrom) / this.revealMs;
+-      this.reveal = Math.min(1, t);
+-      if (t >= 1) this.revealMs = 0;
++      // The reveal waits while the panel around the canvas is still hidden, then starts once its frame has begun to draw.
++      if (!this.revealFrom && !this.canvas.closest("[data-pending]")) this.revealFrom = now + 300;
++      if (this.revealFrom) {
++        const t = (now - this.revealFrom) / this.revealMs;
++        this.reveal = Math.max(0, Math.min(1, t));
++        if (t >= 1) this.revealMs = 0;
++      }
+       this.dirty = true;
+     }
+     this.onTick?.(now, dt);
+diff --git a/src/main.tsx b/src/main.tsx
+index f9bc17b..5010984 100644
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -1,12 +1,13 @@
+ import { createRoot } from "react-dom/client";
+ import "@fontsource-variable/newsreader";
+-import "@fontsource-variable/newsreader/wght-italic.css";
+ import "@fontsource/ibm-plex-sans-condensed/400.css";
+ import "@fontsource/ibm-plex-sans-condensed/600.css";
+ import "@fontsource-variable/jura";
+ import "@fontsource/spectral/400.css";
+-import "@fontsource/spectral/400-italic.css";
+ import "./styles/base.css";
+ import { App } from "./App";
++import { applyMotionLevel, motion } from "./motion";
++
++applyMotionLevel(motion.level);
+ 
+ createRoot(document.getElementById("root")!).render(<App />);
+diff --git a/src/motion.ts b/src/motion.ts
+new file mode 100644
+index 0000000..c3a82f8
+--- /dev/null
++++ b/src/motion.ts
+@@ -0,0 +1,34 @@
++export interface MotionLevel { id: number; name: string; what: string }
++
++export const MOTION_LEVELS: MotionLevel[] = [
++  { id: 0, name: "Still", what: "Nothing animates. Every change shows at once." },
++  { id: 1, name: "Quiet", what: "Motion answers the reader and does nothing else: panels travel to new places, rows open, sorted rows move, the camera glides." },
++  { id: 2, name: "Standard", what: "Adds entry. A panel draws itself when it comes into view or onto the stage, money travels along its ties, and the 3D views sway slowly." },
++  { id: 3, name: "Lively", what: "Adds movement at rest. Money streams through the flow chart, key marks pulse, readouts count up, the sway widens, and a panel draws itself again each time it returns to view." },
++];
++
++const KEY = "fui01-motion";
++const prefersLess = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
++
++function initial() {
++  try {
++    const saved = localStorage.getItem(KEY);
++    if (saved !== null && MOTION_LEVELS[+saved]) return +saved;
++  } catch { /* storage can be blocked */ }
++  return prefersLess ? 0 : 2;
++}
++
++// Read by code that runs outside React, such as the GPU frame loop.
++export const motion = { level: initial() };
++const listeners = new Set<() => void>();
++export const onMotionChange = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
++
++export function applyMotionLevel(level: number) {
++  motion.level = level;
++  const root = document.documentElement;
++  root.dataset.motion = String(level);
++  root.toggleAttribute("data-entry", level >= 2);
++  root.toggleAttribute("data-ambient", level === 3);
++  try { localStorage.setItem(KEY, String(level)); } catch { /* storage can be blocked */ }
++  listeners.forEach((f) => f());
++}
+diff --git a/src/panels.ts b/src/panels.ts
+new file mode 100644
+index 0000000..3889dc0
+--- /dev/null
++++ b/src/panels.ts
+@@ -0,0 +1,17 @@
++export const PANEL_TITLES: Record<string, string> = {
++  "01": "Relationship network",
++  "02": "Person",
++  "03": "Political affiliation",
++  "04": "Giving by state",
++  "05": "Timeline and career history",
++  "06": "Money flow",
++  "07": "Lobbying spend by quarter",
++  "08": "Share of giving by recipient",
++  "09": "Contacts by office, per month",
++  "10": "Lobbying filings",
++  "11": "Finding",
++  "12": "Document",
++  "13": "Documents",
++  "14": "Controls",
++  "15": "Motion and interaction",
++};
+diff --git a/src/styles/base.css b/src/styles/base.css
+index 5687a18..e2959d4 100644
+--- a/src/styles/base.css
++++ b/src/styles/base.css
+@@ -34,15 +34,15 @@ svg { display: block; overflow: visible; }
+ :root { --bar-h: 49px; --inspector-w: 408px; }
+ .switcher {
+   position: sticky; top: 0; z-index: 20;
+-  display: flex; align-items: center; gap: 6px;
++  display: flex; align-items: center; gap: 22px;
+   height: var(--bar-h);
+   padding: 8px 24px;
+-  view-transition-name: bar;
+-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+-  backdrop-filter: blur(10px);
++  background: color-mix(in srgb, var(--bg) 95%, transparent);
+   border-bottom: var(--rule-w) solid var(--rule);
++  view-transition-name: bar;
+ }
+-.switcher button {
++.themes { display: flex; gap: 6px; flex: none; }
++.theme-btn {
+   display: flex; align-items: center; gap: 8px;
+   padding: 5px 13px 5px 8px;
+   background: none;
+@@ -51,15 +51,25 @@ svg { display: block; overflow: visible; }
+   cursor: pointer;
+   font: 500 13px var(--font-ui);
+ }
+-.switcher button:hover { border-color: var(--rule-strong); }
+-.switcher button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+-.switcher span, .switcher kbd, .switcher p { font: 400 11.5px var(--font-ui); opacity: 0.7; }
+-.switcher p { margin-left: auto; }
+-.switcher .brief { margin-left: 14px; }
+-.brief b { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; background: var(--ink); color: var(--bg); border-radius: var(--radius-ctl); font-size: 12px; animation: tick var(--dur-expand) var(--ease); }
+-.brief.has b { background: var(--accent); color: var(--accent-ink); }
++.theme-btn:hover { border-color: var(--rule-strong); }
++.theme-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+ .sw { display: flex; align-items: center; gap: 2px; padding: 3px; width: 26px; height: 14px; border: 1px solid rgba(128, 128, 128, 0.5); }
+ .sw b { flex: 1; height: 100%; }
++.crumbs { flex: 1; min-width: 0; }
++.crumbs ol { display: flex; align-items: center; min-width: 0; font: 13px var(--font-ui); }
++.crumbs li { display: flex; min-width: 0; }
++.crumbs li:last-child { flex: none; }
++.crumbs li + li::before { content: "/"; margin: 0 7px; color: var(--ink-3); }
++.crumbs button { min-width: 0; max-width: 24ch; padding: 3px 2px; border: 0; background: none; color: var(--ink-2); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: underline 1px transparent; text-underline-offset: 4px; transition: color var(--dur-hover), text-decoration-color var(--dur-hover); }
++.crumbs li:last-child button { max-width: 30ch; }
++.crumbs button:hover { color: var(--ink); text-decoration-color: var(--accent); }
++.crumbs [aria-current] { color: var(--ink); font-weight: 600; }
++.motion-ctl { display: flex; align-items: center; gap: 9px; flex: none; }
++.motion-ctl .seg button { padding: 3px 10px; font-size: 12.5px; }
++.brief { flex: none; display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px 5px 13px; background: none; border: var(--rule-w) solid var(--rule-strong); border-radius: var(--radius-ctl); cursor: pointer; font: 500 13px var(--font-ui); }
++.brief:hover { border-color: var(--ink); }
++.brief b { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; background: var(--ink); color: var(--bg); border-radius: var(--radius-ctl); font-size: 12px; animation: tick var(--dur-expand) var(--ease); }
++.brief.has b { background: var(--accent); color: var(--accent-ink); }
+ 
+ /* Board */
+ .board {
+@@ -73,10 +83,10 @@ svg { display: block; overflow: visible; }
+ .mast {
+   grid-column: 1 / -1;
+   display: grid;
+-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) minmax(0, 1fr);
++  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
+   gap: 48px;
+   align-items: end;
+-  padding: 44px 0 26px;
++  padding: 34px 0 20px;
+ }
+ .mast-name {
+   font: var(--display-weight) var(--mast-size) / 0.92 var(--font-display);
+@@ -84,8 +94,7 @@ svg { display: block; overflow: visible; }
+   text-transform: var(--display-case);
+   margin-left: -0.04em;
+ }
+-.mast-concept { font: var(--text-size) / var(--text-leading) var(--font-text); max-width: 58ch; margin: 22px 0 10px; text-wrap: pretty; }
+-.mast .note { max-width: 70ch; }
++.foot { max-width: 1760px; margin: 0 auto; padding: 0 24px 40px; color: var(--ink-3); font-size: 12px; }
+ .swatches li { display: grid; grid-template-columns: 30px 9.5em 1fr; gap: 10px; align-items: center; padding: 4px 0; font-size: 13px; }
+ .swatches i { height: 16px; border: 1px solid var(--rule); border-radius: var(--radius); }
+ .swatches b { font-weight: 600; }
+@@ -139,7 +148,7 @@ svg { display: block; overflow: visible; }
+ .net-label { transition: opacity 0.2s; }
+ .net-label.focus, .net-label.sel { font-weight: 700; }
+ .net-label.sel:not(.focus) { text-decoration: underline 1.5px var(--accent); text-underline-offset: 3px; }
+-.net-sheet-label { position: absolute; top: 0; left: 0; margin: 5px 0 0 2px; white-space: nowrap; font: italic 13px var(--font-text); color: var(--ink-2); }
++.net-sheet-label { position: absolute; top: 0; left: 0; margin: 5px 0 0 2px; white-space: nowrap; font: 13px var(--font-text); color: var(--ink-2); }
+ .map-label.spike { font: 600 11.5px var(--font-num); color: var(--ink); }
+ .key-line.stem i { width: 0; height: 14px; margin: 0 10px 0 9px; border-top: 0; border-left: 1px solid var(--rule-strong); }
+ .net-ring-label, .net-sheet-label { transition: opacity 0.2s; }
+@@ -380,7 +389,7 @@ sup { color: var(--accent-text); font: 700 0.68em var(--font-ui); margin-left: 1
+ .redact span:nth-child(3) { width: 72%; }
+ .redact em { font: 12px var(--font-ui); font-style: normal; color: var(--ink-3); }
+ .attach { font: 13px var(--font-ui) !important; padding-top: 12px; border-top: 1px solid var(--rule); }
+-.doc-notes { counter-reset: n; font: italic 14px / 1.45 var(--font-text); color: var(--ink-2); padding-left: 16px; border-left: 1px solid var(--rule); }
++.doc-notes { counter-reset: n; font: 14px / 1.45 var(--font-text); color: var(--ink-2); padding-left: 16px; border-left: 1px solid var(--rule); }
+ .doc-notes li { counter-increment: n; margin-bottom: 14px; }
+ .doc-notes li:not(.plain)::before { content: counter(n); margin-right: 6px; color: var(--accent-text); font: 700 12px var(--font-ui); }
+ .doclist li { border-bottom: 1px solid var(--rule); }
+@@ -454,7 +463,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+ /* ---------------------------------------------------------------- Vellum */
+ [data-family="vellum"] { --surface-solid: #EAEEE8; }
+ [data-family="vellum"] body::before {
+-  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 30; opacity: 0.5; mix-blend-mode: multiply;
++  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 30; opacity: 0.5;
+   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+ }
+ [data-family="vellum"] .panel { background: color-mix(in srgb, #F4F7F1 45%, transparent); }
+@@ -462,21 +471,19 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+ [data-family="vellum"] .corner::before, [data-family="vellum"] .corner::after { content: ""; position: absolute; background: var(--ink); }
+ [data-family="vellum"] .corner::before { left: -5px; top: 0; width: 14px; height: 1px; }
+ [data-family="vellum"] .corner::after { left: 0; top: -5px; width: 1px; height: 14px; }
+-[data-family="vellum"] .panel-fig::before { content: "Fig. "; }
+-[data-family="vellum"] .panel-fig { font: italic 400 14px var(--font-text); color: var(--ink-2); }
+ [data-family="vellum"] .panel-h { align-items: baseline; padding-top: 11px; }
+ [data-family="vellum"] .sub-h { font-weight: 600; color: var(--ink); }
+ [data-family="vellum"] .net-label.focus { background: var(--ink); color: var(--viz-bg); padding: 1px 6px; text-shadow: none; font-weight: 600; }
+-[data-family="vellum"] .note { font: italic 14px / 1.42 var(--font-text); }
++[data-family="vellum"] .note { font: 14px / 1.42 var(--font-text); }
+ [data-family="vellum"] .c-band { fill: url(#hatch); opacity: 0.55; }
+ [data-family="vellum"] .ribbon { stroke: var(--ink); stroke-opacity: 0.5; stroke-width: 0.6; opacity: 0.1; }
+ [data-family="vellum"] .ribbon.hot { opacity: 0.55; stroke: var(--money); stroke-opacity: 1; }
+-[data-family="vellum"] .person-role, [data-family="vellum"] .readout span { font: italic 15px / 1.4 var(--font-text); }
++[data-family="vellum"] .person-role, [data-family="vellum"] .readout span { font: 15px / 1.4 var(--font-text); }
+ [data-family="vellum"] .tag { font-size: 12px; }
+ [data-family="vellum"] .seat-dot { fill-opacity: 0.9; }
+ [data-family="vellum"] .tip { animation: none; }
+ [data-family="vellum"] .panel.tile .panel-title { font-size: 15.5px; }
+-[data-family="vellum"] .panel-glance { font: italic 13.5px / 1.3 var(--font-text); }
++[data-family="vellum"] .panel-glance { font: 13.5px / 1.3 var(--font-text); }
+ [data-family="vellum"] :is(.insp-page, .doc) { animation-name: plot-in; }
+ [data-family="vellum"] .gt-item[data-open="true"] .gt-detail { box-shadow: inset 1px 0 0 var(--rule-strong); margin-left: 9px; padding-left: 15px; }
+ 
+@@ -537,25 +544,52 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+ 
+ 
+ /* ------------------------------------------------------------------ Motion */
+-.panel { --i: 0; }
+-[data-family="vellum"] [data-entering] .panel { animation: plot-in var(--dur-enter) var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger)); }
+-[data-family="orrery"] [data-entering] .panel { animation: wind-up var(--dur-enter) var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger)); }
+-[data-family="orrery"] [data-entering] .panel-h { animation: sweep calc(var(--dur-enter) * 1.6) var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger)); }
+-[data-entering] .mast > * { animation: wind-up var(--dur-enter) var(--ease) backwards; }
+-[data-entering] .mast > :nth-child(2) { animation-delay: 90ms; } [data-entering] .mast > :nth-child(3) { animation-delay: 180ms; }
++/* Entry. A panel stays hidden until it comes into view, then draws itself once. The Panel component sets data-pending and data-enter. */
++.panel { --i: 0; --lead: 260ms; }
++.panel[data-enter] { --d: calc(var(--i) * var(--stagger)); }
++.panel[data-enter="content"] { --lead: var(--dur-layout); }
++.panel[data-pending]:not(.tile) { opacity: 0; pointer-events: none; }
++[data-family="vellum"] .panel[data-enter="frame"] { animation: plot-in var(--dur-enter) var(--ease) backwards; animation-delay: var(--d); }
++[data-family="orrery"] .panel[data-enter="frame"] { animation: wind-up var(--dur-enter) var(--ease) backwards; animation-delay: var(--d); }
++[data-family="orrery"] .panel[data-enter] > .panel-h { animation: sweep calc(var(--dur-enter) * 1.6) var(--ease) backwards; animation-delay: var(--d); }
++html[data-entry] .mast > * { animation: wind-up var(--dur-enter) var(--ease) backwards; }
++html[data-entry] .mast > :nth-child(2) { animation-delay: 90ms; }
++html[data-entry] .mast > :nth-child(3) { animation-delay: 180ms; }
+ @keyframes plot-in { from { clip-path: inset(0 100% 0 0); opacity: 0.3; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+-@keyframes wind-up { from { opacity: 0; filter: brightness(1.8); } to { opacity: 1; filter: brightness(1); } }
++@keyframes wind-up { from { opacity: 0; } }
+ @keyframes sweep { from { background-size: 0 1px, 0 7px, 0 4px; } }
+ 
+-[data-entering] :is(.c-line, .spark-line, .slope path:not(.c-hit)) { stroke-dasharray: 1; animation: draw 1200ms var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger) + 260ms); }
+-[data-entering] :is(.mult, .tl-contact, .spark-bar) { transform-box: fill-box; transform-origin: 50% 100%; animation: rise 620ms var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger) + 300ms); }
+-[data-entering] :is(.ribbon, .c-dot, .tl-gift, .tl-flag, .tl-career, .seat, .c-band, .rug) { animation: fade 700ms ease-out backwards; animation-delay: calc(var(--i) * var(--stagger) + 420ms); }
+-[data-entering] :is(.rank-bar, .ties-bar, .cell-bar, .rel) i { transform-origin: 0 50%; animation: grow 700ms var(--ease) backwards; animation-delay: calc(var(--i) * var(--stagger) + 300ms); }
+-[data-entering] .viz-labels { animation: fade 600ms ease-out backwards; animation-delay: calc(var(--i) * var(--stagger) + var(--dur-reveal) * 0.75); }
++.panel[data-enter] :is(.c-line, .spark-line, .slope path:not(.c-hit)) { stroke-dasharray: 1; animation: draw 1200ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead)); }
++.panel[data-enter] .spark-bar { transform-box: fill-box; transform-origin: 50% 100%; animation: rise 620ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead) + 40ms + var(--k, 0) * 22ms); }
++.panel[data-enter] :is(.seat, .c-band) { animation: fade 600ms ease-out backwards; animation-delay: calc(var(--d) + var(--lead) + 300ms + var(--k, 0) * 26ms); }
++.panel[data-enter] .c-dot { animation: fade 400ms ease-out backwards; animation-delay: calc(var(--d) + var(--lead) + var(--k, 0) * 42ms); }
++.panel[data-enter] .c-note { animation: fade 600ms ease-out backwards; animation-delay: calc(var(--d) + var(--lead) + 1000ms); }
++/* Dense charts wipe in as one piece, which costs one animation instead of a hundred. */
++.panel[data-enter] svg.wipe { animation: wipe-clip 1200ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead)); }
++.panel[data-enter] :is(.rank-bar, .ties-bar, .cell-bar, .rel) i { transform-origin: 0 50%; animation: grow 700ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead) + 80ms + var(--k, 0) * 30ms); }
++.panel[data-enter] :is(.gt-item, .doclist li, .ties li, .rank li) { animation: row-in 520ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead) + 60ms + var(--k, 0) * 40ms); }
++.panel[data-enter] .viz-labels { animation: fade 600ms ease-out backwards; animation-delay: calc(var(--d) + var(--dur-reveal) * 0.75 + 300ms); }
++/* The money flow wipes in from the sources and each column lights as the wipe reaches it. */
++.panel[data-enter] .flow-wipe { transform-origin: 0 0; animation: wipe-x 1500ms var(--ease) backwards; animation-delay: calc(var(--d) + var(--lead) + 80ms); }
++.panel[data-enter] :is(.flow-node, .flow-head) { animation: fade 520ms ease-out backwards; animation-delay: calc(var(--d) + var(--lead) + 60ms + var(--col, 0) * 420ms); }
+ @keyframes draw { from { stroke-dashoffset: 1; } }
+ @keyframes rise { from { transform: scaleY(0); } }
+ @keyframes grow { from { transform: scaleX(0); } }
+ @keyframes fade { from { opacity: 0; } }
++@keyframes wipe-x { from { transform: scaleX(0); } }
++@keyframes wipe-clip { from { clip-path: inset(0 100% 0 0); } }
++@keyframes row-in { from { opacity: 0; transform: translateX(-8px); } }
++
++/* Movement at rest, at the Lively level. Money streams along the ribbons in the direction it moved. */
++.flow-stream { fill: none; stroke: var(--money); stroke-width: 1.4; stroke-dasharray: 2 13; stroke-linecap: round; opacity: 0; pointer-events: none; transition: opacity var(--dur-hover); }
++.flow-stream.hot { stroke: var(--surface-solid); }
++html[data-ambient] .panel:not([data-enter]) .flow-stream { opacity: 0.85; animation: stream 1.3s linear infinite; }
++html[data-ambient] .panel:not([data-enter]) [data-probing="true"] .flow-stream:not(.on) { opacity: 0; }
++html[data-ambient] .panel:not([data-enter]) :is(.tl-contact.key, .mult.key, .spark-peak, .seat-ring) { animation: beat 2.6s ease-in-out infinite; }
++html[data-ambient] .panel:not([data-enter]) .c-dot.peak { transform-box: fill-box; transform-origin: center; animation: swell 2.6s ease-in-out infinite; }
++@keyframes stream { to { stroke-dashoffset: -15; } }
++@keyframes beat { 50% { opacity: 0.4; } }
++@keyframes swell { 50% { transform: scale(1.6); } }
+ 
+ .chip, .btn, .seg button, .tag { transition: background-color var(--dur-hover), border-color var(--dur-hover), color var(--dur-hover); }
+ @keyframes tick { from { transform: translateY(-70%); opacity: 0; } }
+@@ -640,18 +674,13 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+   border-left: var(--rule-w) solid var(--rule-strong);
+   view-transition-name: inspector;
+ }
+-.insp-h { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 14px 8px 18px; border-bottom: var(--rule-w) solid var(--rule); }
+-.trail { display: flex; flex-wrap: wrap; align-items: baseline; row-gap: 2px; min-width: 0; font-size: 12.5px; color: var(--ink-2); }
+-.trail li + li::before { content: "/"; margin: 0 7px; color: var(--ink-3); }
+-.trail button { padding: 0; border: 0; background: none; cursor: pointer; color: var(--ink-2); text-decoration: underline 1px var(--rule-strong); text-underline-offset: 3px; }
+-.trail button:hover { color: var(--ink); text-decoration-color: var(--accent); }
+-.trail [aria-current] { color: var(--ink); font-weight: 600; }
++.insp-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 14px 8px 18px; border-bottom: var(--rule-w) solid var(--rule); }
+ .insp-b { flex: 1; overflow-y: auto; padding: 20px 18px 40px; }
+ .insp-page { display: grid; gap: 16px; animation: fade var(--dur-layout) var(--ease); }
+ .insp-page :is(.person-name, .person-role, .facts) { margin: 0; }
+ .insp-page .person-name { outline: 0; }
+ .insp-page .person-role { margin-top: -8px; }
+-.insp-kind { display: flex; align-items: center; gap: 7px; margin-bottom: -10px; }
++.insp-kind { display: flex; align-items: center; gap: 7px; }
+ .facts.three { grid-template-columns: repeat(3, 1fr); }
+ .inspector .ties li { grid-template-columns: minmax(0, 1fr) auto 56px; }
+ .inspector .ties + .sub { margin-top: 6px; }
+@@ -689,14 +718,16 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
+ }
+ @media (max-width: 640px) {
+   .board { padding: 0 16px 48px; gap: 14px; }
+-  .switcher { padding: 8px 16px; overflow-x: auto; }
+-  .switcher p, .switcher span { display: none; }
++  .switcher { padding: 8px 16px; gap: 12px; }
++  .crumbs, .motion-ctl .label { display: none; }
+   .kit, .multiples, .facts { grid-template-columns: 1fr; }
+   .affil-row { flex-direction: column; align-items: flex-start; }
+   .viz { height: 460px; } .viz.map { height: 300px; }
+   .viz-key, .viz-br { display: none; }
++  .theme-btn { padding-right: 8px; font-size: 0; gap: 0; }
+   .gtable { overflow-x: auto; }
+ }
++html[data-motion="0"] *, html[data-motion="0"] *::before, html[data-motion="0"] *::after { transition: none !important; animation: none !important; }
+ @media (prefers-reduced-motion: reduce) {
+   * { transition: none !important; animation: none !important; }
+ }
+diff --git a/src/themes.ts b/src/themes.ts
+index a3f8944..2157928 100644
+--- a/src/themes.ts
++++ b/src/themes.ts
+@@ -24,7 +24,6 @@ export interface Motion {
+   expand: number;
+   sort: number;
+   ease: string;
+-  character: string;
+   notes: { name: string; what: string; timing: string }[];
+ }
+ 
+@@ -196,14 +195,12 @@ const vellum: Theme = {
+     expand: 220,
+     sort: 320,
+     ease: "cubic-bezier(0.2, 0.7, 0.1, 1)",
+-    character:
+-      "A frame changes size like a mask over a drawing. Its contents keep their scale while the frame crops or uncovers them, and a new sheet slides in from the edge it belongs to.",
+     notes: [
+-      { name: "Plot in", what: "Each frame wipes in from the left as if a pen plotter drew it. Chart lines draw along their own length and bars rise from the baseline.", timing: "520 ms a panel, 45 ms apart" },
+-      { name: "Ink ties", what: "Network ties and state borders draw from source to target, then the nodes appear.", timing: "1.5 s, drawn on the GPU" },
+-      { name: "Pull apart", what: "Switching between Flat and Strata separates the three sheets and tips the camera in a single move, so each node keeps its place.", timing: "1.1 s, ease in and out" },
+-      { name: "Drift", what: "At rest the stack sways a few degrees so depth reads through parallax, and sheets away from the focal plane soften. The sway stops while the pointer is over the view.", timing: "26 s a cycle" },
+-      { name: "Money", what: "Dashes march along money ties, down or up through the sheets in the direction the money moved.", timing: "0.9 dash lengths a second" },
++      { name: "Plot in", what: "Frames wipe in from the left when they come into view. Lines draw, bars rise left to right, and the money flow wipes from sources to recipients.", timing: "520 ms a panel, 45 ms apart" },
++      { name: "Ink ties", what: "Network ties and state borders draw from source to target.", timing: "1.5 s, on the GPU" },
++      { name: "Pull apart", what: "Flat to Strata separates the sheets and tips the camera in one move.", timing: "1.1 s" },
++      { name: "Drift", what: "The stack sways slowly and stops under the pointer.", timing: "26 s a cycle" },
++      { name: "Money", what: "Dashes march along ties and ribbons in the direction the money moved.", timing: "0.9 dash lengths a second" },
+     ],
+   },
+ };
+@@ -337,14 +334,12 @@ const orrery: Theme = {
+     expand: 320,
+     sort: 460,
+     ease: "cubic-bezier(0.3, 0, 0.1, 1)",
+-    character:
+-      "A plate glides to its new place and settles. Its rim glows for a moment on arrival and the tick scale under its title sweeps across again.",
+     notes: [
+-      { name: "Wind up", what: "Each plate fades up while the tick scale under its title sweeps from left to right. Chart lines draw along their own length.", timing: "700 ms a panel, 60 ms apart" },
+-      { name: "Sweep", what: "Rings sweep round from twelve o'clock, innermost first, and nodes light as their ring arrives.", timing: "2.2 s, drawn on the GPU" },
+-      { name: "Lift off", what: "Switching between Plan and Armillary raises every stem from the ring it stands on and tips the camera in a single move.", timing: "1.4 s, ease in and out" },
+-      { name: "Turn", what: "At rest the instrument swings slowly through a third of a turn and back while the tick scales turn against it. Both stop while the pointer is over the view.", timing: "48 s a cycle" },
+-      { name: "Money", what: "Pulses travel along the arcs overhead in the direction the money moved.", timing: "one pulse every 4 to 6 s" },
++      { name: "Wind up", what: "Plates fade up as they come into view while the tick scale under each title sweeps across. Lines draw and the money flow wipes from sources to recipients.", timing: "700 ms a panel, 60 ms apart" },
++      { name: "Sweep", what: "Rings sweep round from twelve o'clock and nodes light as their ring arrives.", timing: "2.2 s, on the GPU" },
++      { name: "Lift off", what: "Plan to Armillary raises every stem off its ring and tips the camera in one move.", timing: "1.4 s" },
++      { name: "Turn", what: "The instrument swings slowly while tick scales turn against it. Both stop under the pointer.", timing: "48 s a cycle" },
++      { name: "Money", what: "Pulses travel along arcs and ribbons in the direction the money moved.", timing: "a pulse every 4 to 6 s" },
+     ],
+   },
+ };
+@@ -361,49 +356,12 @@ export interface Interaction {
+ 
+ // `run` is a command the app shell carries out when the reader presses the button beside the entry.
+ export const INTERACTIONS: Interaction[] = [
+-  {
+-    name: "Tooltip",
+-    what: "A data mark answers the pointer at once and the readout snaps to the nearest value. Labels, codes and icon buttons wait a third of a second, and after the first one opens the next ones open without the wait. An entity name shows a card.",
+-    timing: (m) => `0 ms on data, 350 ms on labels, ${m.hover} ms to fade`,
+-  },
+-  {
+-    name: "Open a row",
+-    what: "A filing or a document in a list opens in place and moves the later rows down. The opened part carries its own actions.",
+-    timing: (m) => `${m.expand} ms`,
+-    action: { label: "Open a filing", run: "filing" },
+-  },
+-  {
+-    name: "Sort",
+-    what: "A column heading sorts by that column and a second press reverses the order. Each row travels to its new place, so the eye can follow one of them.",
+-    timing: (m) => `${m.sort} ms, rows 14 ms apart`,
+-    action: { label: "Sort by amount", run: "sort" },
+-  },
+-  {
+-    name: "Full size",
+-    what: "The corner button puts a panel on a stage. The other panels fold to tiles in a rail at the side, each with a line of summary, and choosing a tile swaps it onto the stage. Escape returns to the board.",
+-    timing: (m) => `${m.layout} ms`,
+-    action: { label: "Stage the network", run: "stage" },
+-  },
+-  {
+-    name: "Dossier",
+-    what: "An entity name anywhere opens its dossier in a drawer on the right. The board narrows to make room and the network isolates the same entity. Names inside the dossier lead on, and a trail leads back.",
+-    timing: (m) => `${m.layout} ms`,
+-    action: { label: "Open Petra Voss", run: "dossier" },
+-  },
+-  {
+-    name: "Linked marks",
+-    what: "Pointing at a month in the small multiples reads that month in all six. Pointing at a recipient in the money flow traces its money back to the sources. A footnote number and its margin note light together, and a state in the ranked list lights on the map.",
+-    timing: () => "0 ms",
+-  },
+-  {
+-    name: "Measure",
+-    what: "Dragging across the timeline marks a window and counts the contacts, gifts and events inside it.",
+-    timing: () => "follows the pointer",
+-    action: { label: "Measure the 90 days", run: "brush" },
+-  },
+-  {
+-    name: "Commit",
+-    what: "Add to brief turns the button to its done state and the count in the top bar steps up. Dismiss folds a finding to one line with an undo.",
+-    timing: (m) => `${m.expand} ms`,
+-  },
++  { name: "Tooltip", what: "Data marks answer at once. Labels and icon buttons wait a third of a second, then the next ones open without waiting.", timing: (m) => `0 to 350 ms, fade ${m.hover} ms` },
++  { name: "Open a row", what: "Rows open in place and move the later rows down.", timing: (m) => `${m.expand} ms`, action: { label: "Open a filing", run: "filing" } },
++  { name: "Sort", what: "Rows travel to their new places so one can be followed.", timing: (m) => `${m.sort} ms, rows 14 ms apart`, action: { label: "Sort by amount", run: "sort" } },
++  { name: "Full size", what: "A panel takes the stage and the rest fold to tiles in a rail.", timing: (m) => `${m.layout} ms`, action: { label: "Stage the network", run: "stage" } },
++  { name: "Dossier", what: "An entity name opens its dossier in a drawer and the board narrows to make room.", timing: (m) => `${m.layout} ms`, action: { label: "Open Petra Voss", run: "dossier" } },
++  { name: "Linked marks", what: "Pointing at a mark lights its counterparts elsewhere.", timing: () => "0 ms" },
++  { name: "Measure", what: "Dragging across the timeline counts what falls inside.", timing: () => "follows the pointer", action: { label: "Measure the 90 days", run: "brush" } },
++  { name: "Commit", what: "Add to brief steps the count in the top bar.", timing: (m) => `${m.expand} ms` },
+ ];
+diff --git a/src/workspace.tsx b/src/workspace.tsx
+index cfd6b7a..913f2ff 100644
+--- a/src/workspace.tsx
++++ b/src/workspace.tsx
+@@ -1,46 +1,111 @@
+-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+-import type { ReactNode } from "react";
++import { useEffect, useRef, useSyncExternalStore } from "react";
+ import { flushSync } from "react-dom";
+-import { reducedMotion } from "./gpu/scene";
++import { gpuState, wakeScenes } from "./gpu/scene";
++import { applyMotionLevel, motion } from "./motion";
+ import { tip } from "./tip";
+ 
++interface Command { name: string; arg?: string; n: number }
++
++export interface State {
++  stage: string | null;
++  trail: string[];
++  doc: string;
++  brief: string[];
++  command: Command;
++  level: number;
++  replays: number;
++}
++
++let state: State = { stage: null, trail: [], doc: "E-0212", brief: [], command: { name: "", n: 0 }, level: motion.level, replays: 0 };
++const subs = new Set<() => void>();
++const set = (patch: Partial<State>) => {
++  state = { ...state, ...patch };
++  subs.forEach((f) => f());
++};
++const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
++export const getState = () => state;
++
++// A component re-renders only when what its selector returns changes.
++export function useWs<T>(select: (s: State) => T): T {
++  return useSyncExternalStore(subscribe, () => select(state));
++}
++
++let morphs = 0;
+ // Applies a change of layout inside a view transition, so every named frame travels from its old box to its new one.
++// The GPU views hold still while it runs and draw once at their new size.
+ export function morph(change: () => void, after?: () => void) {
+   tip.hide();
+-  if (reducedMotion || !document.startViewTransition) {
++  if (motion.level === 0 || !document.startViewTransition) {
+     flushSync(change);
+     after?.();
+     return;
+   }
+-  document.startViewTransition(() => {
++  morphs++;
++  gpuState.paused = true;
++  const resume = () => {
++    if (--morphs > 0) return;
++    gpuState.paused = false;
++    wakeScenes();
++  };
++  const t = document.startViewTransition(() => {
+     flushSync(change);
+     after?.();
+   });
++  t.finished.then(resume, resume);
+ }
+ 
+-interface Command { name: string; arg?: string; n: number }
++const panelEl = (fig: string) => document.querySelector<HTMLElement>(`[data-panel="${fig}"]`);
++let boardY = 0;
+ 
+-interface Workspace {
+-  stage: string | null;
+-  setStage: (fig: string | null) => void;
+-  reveal: (fig: string) => void;
+-  trail: string[];
+-  inspect: (id: string) => void;
+-  jump: (index: number) => void;
+-  closeInspector: () => void;
+-  doc: string;
+-  openDoc: (id: string) => void;
+-  brief: string[];
+-  toggleBrief: (item: string) => void;
+-  command: Command;
+-  run: (name: string, arg?: string) => void;
+-}
++export const ws = {
++  setStage(fig: string | null) {
++    const was = state.stage;
++    if (fig === was) return;
++    if (fig && !was) boardY = scrollY;
++    morph(() => set({ stage: fig }), () => scrollTo(0, fig ? 0 : boardY));
++  },
++  reveal(fig: string) {
++    if (state.stage) ws.setStage(fig);
++    else panelEl(fig)?.scrollIntoView({ behavior: motion.level === 0 ? "auto" : "smooth", block: "center" });
++  },
++  inspect(id: string) {
++    const t = state.trail;
++    if (t[t.length - 1] === id) return;
++    if (t.length) set({ trail: [...t, id].slice(-6) });
++    else morph(() => set({ trail: [id] }));
++  },
++  jump(index: number) { set({ trail: state.trail.slice(0, index + 1) }); },
++  closeInspector() {
++    if (state.trail.length) morph(() => set({ trail: [] }));
++  },
++  home() {
++    if (!state.stage && !state.trail.length) { scrollTo({ top: 0, behavior: motion.level === 0 ? "auto" : "smooth" }); return; }
++    morph(() => set({ stage: null, trail: [] }), () => scrollTo(0, 0));
++  },
++  openDoc(id: string) {
++    set({ doc: id });
++    ws.reveal("12");
++  },
++  toggleBrief(item: string) {
++    set({ brief: state.brief.includes(item) ? state.brief.filter((x) => x !== item) : [...state.brief, item] });
++  },
++  run(name: string, arg?: string) { set({ command: { name, arg, n: state.command.n + 1 } }); },
++  replay() { set({ replays: state.replays + 1 }); },
++  // A change of level replays the entry of the panels in view, so the reader can compare levels on the spot.
++  setLevel(next: number) {
++    applyMotionLevel(next);
++    set({ level: next, replays: state.replays + 1 });
++  },
++};
+ 
+-const Ctx = createContext<Workspace | null>(null);
+-export const useWorkspace = () => useContext(Ctx)!;
++// Everything in the store plus its actions. Components that render often should call useWs with a selector instead.
++export function useWorkspace() {
++  return { ...useWs((s) => s), ...ws };
++}
+ 
++// Runs fn each time the named command is issued after the component mounts.
+ export function useCommand(name: string, fn: (arg?: string) => void) {
+-  const { command } = useWorkspace();
++  const command = useWs((s) => s.command);
+   const latest = useRef(fn);
+   latest.current = fn;
+   const seen = useRef(command.n);
+@@ -50,53 +115,3 @@ export function useCommand(name: string, fn: (arg?: string) => void) {
+     if (command.name === name) latest.current(command.arg);
+   }, [command, name]);
+ }
+-
+-const panelEl = (fig: string) => document.querySelector<HTMLElement>(`[data-panel="${fig}"]`);
+-
+-export function WorkspaceProvider({ children }: { children: ReactNode }) {
+-  const [stage, setStageState] = useState<string | null>(null);
+-  const [trail, setTrail] = useState<string[]>([]);
+-  const [doc, setDoc] = useState("E-0212");
+-  const [brief, setBrief] = useState<string[]>([]);
+-  const [command, setCommand] = useState<Command>({ name: "", n: 0 });
+-  const live = useRef({ stage, trail });
+-  live.current = { stage, trail };
+-  const boardY = useRef(0);
+-
+-  const setStage = useCallback((fig: string | null) => {
+-    const was = live.current.stage;
+-    if (fig === was) return;
+-    if (fig && !was) boardY.current = scrollY;
+-    morph(() => setStageState(fig), () => scrollTo(0, fig ? 0 : boardY.current));
+-  }, []);
+-
+-  const reveal = useCallback((fig: string) => {
+-    if (live.current.stage) setStage(fig);
+-    else panelEl(fig)?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
+-  }, [setStage]);
+-
+-  const inspect = useCallback((id: string) => {
+-    const t = live.current.trail;
+-    if (t[t.length - 1] === id) return;
+-    if (t.length) setTrail([...t, id].slice(-6));
+-    else morph(() => setTrail([id]));
+-  }, []);
+-  const jump = useCallback((index: number) => setTrail((t) => t.slice(0, index + 1)), []);
+-  const closeInspector = useCallback(() => {
+-    if (live.current.trail.length) morph(() => setTrail([]));
+-  }, []);
+-
+-  const openDoc = useCallback((id: string) => {
+-    setDoc(id);
+-    reveal("12");
+-  }, [reveal]);
+-
+-  const toggleBrief = useCallback((item: string) => setBrief((b) => (b.includes(item) ? b.filter((x) => x !== item) : [...b, item])), []);
+-  const run = useCallback((name: string, arg?: string) => setCommand((c) => ({ name, arg, n: c.n + 1 })), []);
+-
+-  const value = useMemo(
+-    () => ({ stage, setStage, reveal, trail, inspect, jump, closeInspector, doc, openDoc, brief, toggleBrief, command, run }),
+-    [stage, setStage, reveal, trail, inspect, jump, closeInspector, doc, openDoc, brief, toggleBrief, command, run],
+-  );
+-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+-}
