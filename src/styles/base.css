@@ -812,8 +812,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 /* ------------------------------------------------------------------ Floe */
 [data-family="floe"] { --surface-solid: #ECEEEF; }
 [data-family="floe"] .panel { border-color: transparent; }
-[data-family="floe"] .panel-h { padding: 8px 0; border-bottom: 0; background: linear-gradient(var(--ink), var(--ink)) left bottom / 100% 2px no-repeat; }
-[data-family="floe"] .panel-b:not(.flush) { padding: 16px 0; }
+[data-family="floe"] .panel-h { padding: 8px 14px; border-bottom: 0; background: linear-gradient(var(--ink), var(--ink)) left bottom / 100% 2px no-repeat; }
 [data-family="floe"] .corner { display: block; width: 11px; height: 11px; }
 [data-family="floe"] .corner::before, [data-family="floe"] .corner::after { content: ""; position: absolute; background: var(--ink-3); }
 [data-family="floe"] .corner::before { left: -5px; top: 0; width: 11px; height: 1px; }
