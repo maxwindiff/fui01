@@ -39,10 +39,15 @@ export const small: Review = {
         { text: "A group may fill 85% of the window height per column before older answers fold.", at: "src/ask/Answers.tsx@618:9" },
         { text: "The slot grid has two columns, and one below 900px.", at: "src/styles/base.css@678:4" },
       ],
-      seq: {
-        parts: ["useArrange", "slot in the DOM", "foldFor"],
-        msgs: [[0, 0, "group answers by root panel"], [0, 1, "getComputedStyle: columns"], [1, 0, "1 or 2"], [0, 2, "limit = 0.85 × window × columns"], [2, 0, "which answers fold"]],
-      },
+      diagram: `sequenceDiagram
+  participant A as useArrange
+  participant S as slot in the DOM
+  participant F as foldFor
+  A->>A: group answers by root panel
+  A->>S: getComputedStyle: columns
+  S-->>A: 1 or 2
+  A->>F: limit = 0.85 × window × columns
+  F-->>A: which answers fold`,
     },
     {
       id: "nodes", title: "Sizing network nodes",

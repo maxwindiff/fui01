@@ -26,6 +26,7 @@
     "@vgpu/wgsl": "^0.6.0",
     "d3-force": "^3.0.1",
     "d3-geo": "^3.1.2",
+    "pele": "1.13.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "topojson-client": "^3.1.0",

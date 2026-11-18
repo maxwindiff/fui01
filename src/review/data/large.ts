@@ -30,10 +30,20 @@ export const large: Review = {
         { text: "Each panel on screen sees replays change and plays its entry again.", at: "src/components/primitives.tsx@117:85" },
         { text: "CSS keys entry and ambient motion off the attributes on the root.", at: "src/styles/base.css@544:17" },
       ],
-      seq: {
-        parts: ["Reader", "MotionControl", "ws", "motion.ts", "GPU scenes", "Panel"],
-        msgs: [[0, 1, "pick Lively"], [1, 2, "setLevel(3)"], [2, 3, "applyMotionLevel(3)"], [3, 3, "root attributes, localStorage"], [3, 4, "wakeScenes()"], [2, 5, "replays + 1"], [5, 5, "arm(\"frame\")"]],
-      },
+      diagram: `sequenceDiagram
+  actor R as Reader
+  participant C as MotionControl
+  participant W as ws
+  participant M as motion.ts
+  participant G as GPU scenes
+  participant P as Panel
+  R->>C: pick Lively
+  C->>W: setLevel(3)
+  W->>M: applyMotionLevel(3)
+  M->>M: root attributes, localStorage
+  M->>G: wakeScenes()
+  W-->>P: replays + 1
+  P->>P: arm("frame")`,
     },
     {
       id: "entry", title: "A panel coming into view",
@@ -45,6 +55,14 @@ export const large: Review = {
         { text: "At Lively, figures count up when the panel plays.", at: "src/components/primitives.tsx@236:4" },
         { text: "The GPU reveal waits until the panel is no longer pending.", at: "src/gpu/scene.ts@144:20" },
       ],
+      diagram: `stateDiagram-v2
+  state "pending (data-pending)" as pending
+  state "entering (data-enter)" as entering
+  [*] --> pending: Standard or Lively
+  [*] --> settled: Still or Quiet
+  pending --> entering: comes into view
+  entering --> settled: 5.2 s later
+  settled --> pending: leaves view at Lively`,
     },
     {
       id: "stage", title: "Staging a panel",
@@ -56,10 +74,19 @@ export const large: Review = {
         { text: "When the transition finishes, the last running morph resumes and wakes the scenes.", at: "src/workspace.tsx@1:49" },
         { text: "The staged panel plays its content entry.", at: "src/components/primitives.tsx@117:89" },
       ],
-      seq: {
-        parts: ["Panel", "ws", "morph", "GPU", "browser"],
-        msgs: [[0, 1, "setStage(fig)"], [1, 2, "change, after"], [2, 3, "paused = true"], [2, 4, "startViewTransition"], [4, 2, "finished"], [2, 3, "paused = false, wake"], [0, 0, "arm(\"content\")"]],
-      },
+      diagram: `sequenceDiagram
+  participant P as Panel
+  participant W as ws
+  participant M as morph
+  participant G as GPU
+  participant B as browser
+  P->>W: setStage(fig)
+  W->>M: change, after
+  M->>G: paused = true
+  M->>B: startViewTransition
+  B-->>M: finished
+  M->>G: paused = false, wake
+  P->>P: arm("content")`,
     },
     {
       id: "store", title: "Reading the workspace",
@@ -69,6 +96,13 @@ export const large: Review = {
         { text: "Panel reads stage and replays through selectors.", at: "src/components/primitives.tsx@117:32" },
         { text: "Crumbs still reads the whole state through useWorkspace.", at: "src/components/Crumbs.tsx@1:34" },
       ],
+      diagram: `flowchart LR
+  set["set(patch)"] --> subs[every subscriber]
+  subs --> panel["Panel: useWs(selector)"]
+  subs --> crumbs["Crumbs: useWorkspace()"]
+  panel -->|slice changed| rp[re-render]
+  panel -->|slice unchanged| skip[no render]
+  crumbs -->|any change| rc[re-render]`,
     },
   ],
   order: [

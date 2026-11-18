@@ -1,10 +1,10 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Fold, Segmented } from "../components/primitives";
 import { tip } from "../tip";
 import { parseCommit } from "./diff";
 import type { Commit, FileDiff, Hunk } from "./diff";
-import type { Finding, Flow, HunkNote, Place, Review as Notes, Seq, Span } from "./types";
+import type { Finding, Flow, HunkNote, Place, Review as Notes, Span } from "./types";
 import { highlight, langOf } from "./highlight";
 import type { Lang } from "./highlight";
 import { getReview, review, useReview } from "./store";
@@ -308,39 +308,25 @@ function FileView({ change, f }: { change: Change; f: FileDiff }) {
   );
 }
 
-function SeqView({ seq }: { seq: Seq }) {
-  const gap = Math.max(120, Math.min(200, 640 / seq.parts.length)), W = seq.parts.length * gap, x = (i: number) => gap * (i + 0.5), top = 34, row = 32;
-  const H = top + seq.msgs.length * row + 10;
-  return (
-    <svg className="rv-seq" viewBox={`0 0 ${W} ${H}`} style={{ maxWidth: W + 24 }} role="img" aria-label={`Sequence: ${seq.parts.join(", ")}`}>
-      {seq.parts.map((p, i) => (
-        <g key={p}>
-          <text className="rv-seq-part" x={x(i)} y={14} textAnchor="middle">{p}</text>
-          <path className="rv-seq-life" d={`M${x(i)} ${top - 12}V${H}`} />
-        </g>
-      ))}
-      {seq.msgs.map(([a, b, label], k) => {
-        const y = top + 14 + k * row;
-        if (a === b) {
-          return (
-            <g key={k}>
-              <path className="rv-seq-msg" d={`M${x(a)} ${y - 6}h22v12h-22`} />
-              <path className="rv-seq-head" d={`M${x(a)} ${y + 6}l6 -3.5v7z`} />
-              <text className="rv-seq-label" x={a === seq.parts.length - 1 ? x(a) - 6 : x(a) + 28} y={y + 4} textAnchor={a === seq.parts.length - 1 ? "end" : "start"}>{label}</text>
-            </g>
-          );
-        }
-        const d = b > a ? 1 : -1;
-        return (
-          <g key={k}>
-            <path className="rv-seq-msg" d={`M${x(a)} ${y}H${x(b) - d * 2}`} />
-            <path className="rv-seq-head" d={`M${x(b)} ${y}l${-d * 7} -3.5v7z`} />
-            <text className="rv-seq-label" x={(x(a) + x(b)) / 2} y={y - 6} textAnchor="middle">{label}</text>
-          </g>
-        );
-      })}
-    </svg>
-  );
+type Pele = typeof import("pele/core");
+let pele: Promise<Pele> | null = null;
+const loadPele = () => pele ??= Promise.all([
+  import("pele/core"), import("pele/diagrams/sequence"), import("pele/diagrams/flowchart"), import("pele/diagrams/state"),
+]).then(([core, ...kinds]) => { core.register(...kinds.map((k) => k.default)); return core; });
+
+function Diagram({ text }: { text: string }) {
+  const el = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let mounted: { destroy(): void } | null = null, gone = false;
+    setFailed(false);
+    loadPele().then((p) => {
+      if (gone) return;
+      mounted = p.mount(el.current!, text, { fontSize: 12.5, zoom: false, config: { sequence: { mirrorActors: false } }, onError: () => setFailed(true) });
+    }, () => setFailed(true));
+    return () => { gone = true; mounted?.destroy(); };
+  }, [text]);
+  return <figure className="rv-diagram" ref={el}>{failed ? <figcaption className="dim">The diagram could not be drawn.</figcaption> : null}</figure>;
 }
 
 function FlowView({ change, flow }: { change: Change; flow: Flow }) {
@@ -350,7 +336,7 @@ function FlowView({ change, flow }: { change: Change; flow: Flow }) {
         <button type="button" className="btn quiet" onClick={() => review.show({ kind: "files" })}>All files</button>
         <h2 className="rv-flow-t">{flow.title}</h2>
       </header>
-      {flow.seq ? <SeqView seq={flow.seq} /> : null}
+      {flow.diagram ? <Diagram text={flow.diagram} /> : null}
       <ol className="rv-steps">
         {flow.steps.map((s, k) => {
           const at = s.at ? split(s.at) : null;

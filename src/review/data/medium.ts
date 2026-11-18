@@ -32,10 +32,19 @@ export const medium: Review = {
         { text: "Case panels leave it out of the outlines, but it still dims or hides.", at: "src/links.ts@10:13" },
         { text: "Answers skip lighting it, but it still narrows which marks stay lit.", at: "src/ask/Answers.tsx@173:5" },
       ],
-      seq: {
-        parts: ["Reader", "Scopes", "board", "useLenses", "panels and answers"],
-        msgs: [[0, 1, "type a search"], [1, 2, "select(from: find)"], [0, 1, "press Hide"], [1, 2, "setFindMode(hide)"], [2, 3, "lenses, sel, findMode"], [3, 4, "lenses + FIND"], [4, 4, "hide what FIND misses"]],
-      },
+      diagram: `sequenceDiagram
+  actor R as Reader
+  participant S as Scopes
+  participant B as board
+  participant L as useLenses
+  participant P as panels and answers
+  R->>S: type a search
+  S->>B: select(from: find)
+  R->>S: press Hide
+  S->>B: setFindMode(hide)
+  B-->>L: lenses, sel, findMode
+  L-->>P: lenses + FIND
+  P->>P: hide what FIND misses`,
     },
     {
       id: "keep", title: "Keeping a search as a lens",
