@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent, ReactNode } from "react";
+import type { MouseEvent, PointerEvent as Pointer, ReactNode } from "react";
 import { Fold, Segmented } from "../components/primitives";
 import { tip } from "../tip";
 import { parseCommit } from "./diff";
@@ -148,12 +148,67 @@ function Attached({ change, hkey, from, to }: { change: Change; hkey: string; fr
   );
 }
 
-// With `pseudo`, the text after the indentation is underlined to set it apart from real code.
-function Code({ text, lang, pseudo }: { text: string; lang: Lang; pseudo?: boolean }) {
+const TOK = /\/\/[^\n]*|\/\*.*?(?:\*\/|$)|\w+|\s+|[^\w\s]/g;
+const marks = new Map<string, boolean[]>();
+
+// Marks the characters of a pseudocode line that do not come from the lines it replaces, by a longest common
+// subsequence over tokens. A comment counts as one token. Punctuation matched between two marked tokens is marked too, so that a made-up call like
+// `group_answers_by(root)` is not underlined in pieces.
+function invented(text: string, source: string): boolean[] {
+  const key = `${text}\u0000${source}`;
+  const hit = marks.get(key);
+  if (hit) return hit;
+  const a = text.match(TOK) ?? [];
+  const b = (source.match(TOK) ?? []).filter((t) => t.trim());
+  const ws = a.map((t) => !t.trim());
+  const n = a.length, m = b.length;
+  const dp = new Uint16Array((n + 1) * (m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
+    dp[i * (m + 1) + j] = !ws[i] && a[i] === b[j] ? dp[(i + 1) * (m + 1) + j + 1] + 1 : Math.max(dp[(i + 1) * (m + 1) + j], dp[i * (m + 1) + j + 1]);
+  const made = a.map((_, i) => !ws[i]);
+  for (let i = 0, j = 0; i < n && j < m;) {
+    if (ws[i]) i++;
+    else if (a[i] === b[j]) { made[i] = false; i++; j++; }
+    else if (dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1]) i++;
+    else j++;
+  }
+  const words = a.map((t, i) => (ws[i] ? -1 : i)).filter((i) => i >= 0);
+  for (let k = 0; k < words.length;) {
+    let e = k;
+    while (e < words.length && !made[words[e]]) e++;
+    if (e > k && k > 0 && e < words.length && words.slice(k, e).every((i) => !/\w/.test(a[i]))) words.slice(k, e).forEach((i) => { made[i] = true; });
+    k = Math.max(e, k + 1);
+  }
+  for (let k = 1; k < words.length; k++) if (made[words[k - 1]] && made[words[k]]) for (let i = words[k - 1] + 1; i < words[k]; i++) made[i] = true;
+  const out = a.flatMap((t, i) => Array<boolean>(t.length).fill(made[i]));
+  marks.set(key, out);
+  return out;
+}
+
+// With `source`, the text is pseudocode for those lines, and the parts not taken from them are underlined.
+function Code({ text, lang, source }: { text: string; lang: Lang; source?: string }) {
   if (!text) return <code> </code>;
-  const indent = pseudo ? /^\s*/.exec(text)![0] : "";
-  const tokens = highlight(text.slice(indent.length), lang).map(([c, t], i) => (c ? <span key={i} className={`h-${c}`}>{t}</span> : t));
-  return <code>{pseudo ? <>{indent}<span className="rv-u">{tokens}</span></> : tokens}</code>;
+  const indent = source != null ? /^\s*/.exec(text)![0] : "";
+  const body = text.slice(indent.length);
+  const tokens = highlight(body, lang);
+  if (source == null) return <code>{tokens.map(([c, t], i) => (c ? <span key={i} className={`h-${c}`}>{t}</span> : t))}</code>;
+  const made = invented(body, source);
+  const runs: { u: boolean; parts: [string | null, string][] }[] = [];
+  let at = 0;
+  for (const [c, t] of tokens) {
+    for (let s = 0; s < t.length;) {
+      const u = made[at + s];
+      let e = s;
+      while (e < t.length && made[at + e] === u) e++;
+      const last = runs[runs.length - 1];
+      if (last?.u === u) last.parts.push([c, t.slice(s, e)]);
+      else runs.push({ u, parts: [[c, t.slice(s, e)]] });
+      s = e;
+    }
+    at += t.length;
+  }
+  const show = (parts: [string | null, string][]) => parts.map(([c, t], i) => (c ? <span key={i} className={`h-${c}`}>{t}</span> : t));
+  return <code>{indent}{runs.map((r, i) => (r.u ? <span key={i} className="rv-u">{show(r.parts)}</span> : <Fragment key={i}>{show(r.parts)}</Fragment>))}</code>;
 }
 
 type Row =
@@ -264,6 +319,10 @@ function HunkView({ change, h, near, bare, force }: { change: Change; h: Hunk; n
     if (r.kind === "line") return <Attached change={change} hkey={h.key} from={r.i} to={r.i} />;
     return r.kind === "fold" || r.last ? <Attached change={change} hkey={h.key} from={r.from} to={r.to} /> : null;
   };
+  // Pointing at the gutter of an expanded line highlights every line that collapses with it.
+  const hot = (span: number, on: boolean) => (e: Pointer) => {
+    e.currentTarget.closest(".rv-hunk")?.querySelectorAll(`.rv-ln[data-span="${span}"]`).forEach((el) => el.classList.toggle("hot", on));
+  };
   // In the split layout `side` picks the old or the new line number.
   const cell = (r: Row, side?: "old" | "new") => {
     if (r.kind === "fold") {
@@ -283,17 +342,18 @@ function HunkView({ change, h, near, bare, force }: { change: Change; h: Hunk; n
           onPointerMove={(e) => showOriginal(`${h.key}#${r.from}`, e.currentTarget.querySelector("code")!, <Original h={h} from={r.from} to={r.to} />)}
           onPointerLeave={hideOriginal}
         >
-          <span className="rv-no" /><span className="rv-sign">{sign}</span><Code text={r.text} lang={sign === " " ? "plain" : lang} pseudo />
+          <span className="rv-no" /><span className="rv-sign">{sign}</span><Code text={r.text} lang={sign === " " ? "plain" : lang} source={h.lines.slice(r.from, r.to + 1).map((l) => l.text).join("\n")} />
         </button>
       );
     }
     const l = h.lines[r.i];
     const no = side === "old" ? l.old : side === "new" ? l.neu : l.neu ?? l.old;
     return (
-      <div key={side} className={`rv-ln${l.k === "+" ? " add" : l.k === "-" ? " del" : ""}${r.span !== null ? " opened" : ""}${here === r.i ? " here" : ""}`}>
-        {r.span !== null && side !== "new" ? <button type="button" className="rv-shut" aria-label="Collapse" onClick={toggle(r.span)} /> : null}
+      <div key={side} className={`rv-ln${l.k === "+" ? " add" : l.k === "-" ? " del" : ""}${r.span !== null ? " opened" : ""}${here === r.i ? " here" : ""}`} data-span={r.span ?? undefined}>
         <button type="button" className="rv-no num" aria-label={`Comment on line ${no}`} data-tip="Comment" onClick={(e) => { e.stopPropagation(); review.write(`${h.key}:${r.i}`); }}>{no}</button>
-        <span className="rv-sign">{l.k === "-" ? "−" : l.k}</span>
+        {r.span !== null
+          ? <button type="button" className="rv-sign rv-shut" aria-label="Collapse" data-tip="Collapse" onClick={toggle(r.span)} onPointerEnter={hot(r.span, true)} onPointerLeave={hot(r.span, false)}>{l.k === "-" ? "−" : l.k}</button>
+          : <span className="rv-sign">{l.k === "-" ? "−" : l.k}</span>}
         <Code text={l.text} lang={l.k === " " ? "plain" : lang} />
       </div>
     );

@@ -110,7 +110,7 @@
 .rv-ln.del .rv-sign, .sdel .rv-sign { color: var(--alert); }
 .smix .rv-sign { color: var(--money); }
 button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.rv-ln.opened { box-shadow: inset 2px 0 0 var(--rule-strong); }
+.rv-ln.opened { background-image: linear-gradient(color-mix(in srgb, var(--accent) 7%, transparent), color-mix(in srgb, var(--accent) 7%, transparent)); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, transparent); }
 .rv-pseudo.add { background: color-mix(in srgb, var(--ok) 13%, transparent); }
 .rv-pseudo.del { background: color-mix(in srgb, var(--alert) 11%, transparent); }
 .rv-pseudo:hover { background-image: linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 9%, transparent)); }
@@ -124,8 +124,9 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 .rv-pseudo.here, .rv-fold.here { background-image: linear-gradient(color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 9%, transparent)); }
 .rv-fold { color: var(--ink-3); }
 .rv-fold:hover { color: var(--ink); background: var(--surface-2); }
-.rv-shut { position: absolute; inset: 0 auto 0 0; width: 8px; padding: 0; border: 0; background: none; cursor: pointer; }
-.rv-shut:hover { background: var(--accent); }
+.rv-shut { padding: 0; border: 0; background: none; font: inherit; cursor: pointer; }
+.rv-ln.opened.hot { background-image: linear-gradient(color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--accent) 14%, transparent)); box-shadow: inset 2px 0 0 var(--accent); }
+.rv-ln.opened.hot .rv-shut { color: var(--accent-text); }
 
 /* Syntax */
 .h-k, .h-t { color: var(--accent-text); }
