@@ -1,6 +1,6 @@
 # fui01
 
-A specimen sheet of themes for a browser app that analyses ties between companies and government. Every theme draws the same panels over the same invented case file.
+Agentic UI experiments.
 
 ## Start
 
@@ -10,7 +10,7 @@ npm run dev      # http://127.0.0.1:5183
 npm run build    # type-check, then a production build in dist/
 ```
 
-Keys 1 to 5 switch themes. The URL hash holds the theme id and the page, for example `#console/review` or `#console/case`, and the page opens on Review when the hash names no page. Phosphor is left out of the selector and loads from `#phosphor`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
+Keys 1 to 5 switch themes. The URL hash holds the theme id and the page, for example `#console/review` or `#console/case`, and the page opens on Review when the hash names no page. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
 
 The page has a toolbar, the case panels on the left, and answers to questions about them on the right. Both columns are drawn from the case tables in `src/tables.ts`. `src/data.ts` works out what each case panel shows, and `src/ask/sources.ts` writes the same data as SQL over the tables, one set of queries per panel. A question asked about a panel gets the panel's rows as context, and the table button on a panel opens its data as an answer.
 
