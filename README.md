@@ -10,7 +10,7 @@ npm run dev      # http://127.0.0.1:5183
 npm run build    # type-check, then a production build in dist/
 ```
 
-Keys 1 to 5 switch themes, and the theme id also goes in the URL hash, for example `#console`. Phosphor is left out of the selector and loads from `#phosphor`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
+Keys 1 to 5 switch themes. The URL hash holds the theme id and the page, for example `#console/review` or `#console/case`, and the page opens on Review when the hash names no page. Phosphor is left out of the selector and loads from `#phosphor`. The network and map panels need a browser with WebGPU. Without it they show a message and the rest of the page works.
 
 The page has a toolbar, the case panels on the left, and answers to questions about them on the right. Both columns are drawn from the case tables in `src/tables.ts`. `src/data.ts` works out what each case panel shows, and `src/ask/sources.ts` writes the same data as SQL over the tables, one set of queries per panel. A question asked about a panel gets the panel's rows as context, and the table button on a panel opens its data as an answer.
 
@@ -32,22 +32,28 @@ Answers that are not pinned are dropped when the page reloads. Pinned answers, l
 
 ## Review
 
-The Review tab beside Case is a static prototype of a code review tool. In it, an agent prepares a change for a reviewer. The tab shows three commits from this repository, small, medium and large. `src/review/changes/` holds their output from `git show`, and `src/review/data/` holds what the agent wrote about each one:
+The Review tab is a static prototype of a code review tool. In it, an agent prepares a change for a reviewer. The tab shows three commits from this repository, small, medium and large. `src/review/changes/` holds their output from `git show`, and `src/review/data/` holds what the agent wrote about each one:
 - its own review, as draft comments
-- flows through the code, some with a diagram in Mermaid
+- flows through the code, with diagrams in Mermaid between some of the steps
 - a reading order for the files
 - pseudocode for runs of lines in the hunks, at two levels
 
 Text in these files links to code by hunk, as `path@line` with an optional `:i` for a line inside the hunk.
 
-The page puts the file tree, the agent's review and the flows on the left. The middle column starts with the commit message and then shows the files in the agent's reading order. Comments and questions go on the right. [Pele](https://pele.run) draws the flow diagrams, and its sequence, flowchart and state renderers load only when a flow with a diagram opens. The slider sets the summarization level for the whole change:
+The page puts the file tree, the agent's review and the flows on the left, and the change across the rest. It starts with the commit message and then shows the files in the agent's reading order, as a unified or a split diff. [Pele](https://pele.run) draws the flow diagrams, and its sequence, flowchart and state renderers load only when a flow with a diagram opens. The slider in the toolbar sets the summarization level for the whole change:
 1. Raw shows every line.
 2. Condensed turns uninteresting code, such as long attribute lists and boilerplate, into pseudocode or folds it away.
 3. Abstracted also turns self-contained pieces of logic into pseudocode, for example a single call to an invented function, `pop_morph_and_wake_scenes()`.
 
 When the replaced lines define names used elsewhere, the agent writes pseudocode for them instead of folding them away. Each pseudocode line takes the indentation of the first replaced line, and changed lines and their pseudocode are highlighted. Selecting pseudocode opens the original lines in place. `src/review/highlight.ts` highlights TypeScript, CSS, Markdown and JSON one line at a time.
 
-Marking a hunk as read folds it to its header, and marking a whole file folds the file to its name. Selecting a folded header opens it again, and `n` jumps to the next unread hunk. A line number opens a comment box. The agent's draft comment for a finding shows under its line after the reviewer picks the finding from the list on the left. The reviewer can accept the draft as a comment, edit it first or dismiss it, and Sync posts the comments to GitHub. The prototype has no GitHub, so Sync only marks the comments as posted. Questions get scripted answers. Read marks and comments are saved in the browser.
+Marking a hunk as read folds it to its header, and marking a whole file folds the file to its name. Selecting a folded header opens it again, and `n` jumps to the next unread hunk. Generated files such as `tsconfig.tsbuildinfo` stay closed and their hunks are not drawn until the reviewer loads them or comments on them. They count toward neither the progress nor `n`. The agent's draft comment for a finding shows under its line after the reviewer picks the finding from the list on the left. The reviewer can accept the draft as a comment, edit it first or dismiss it, and Sync in the toolbar posts the comments to GitHub. The prototype has no GitHub, so Sync only marks the comments as posted.
+
+The agent answers questions in two places:
+- A question about the whole change goes in the field in the toolbar (`/` focuses it), and the answers open under the field.
+- A line number opens a box under the line, for a comment or a question to the agent. The answer stays under the line, and the box suggests the questions whose answers link into that hunk.
+
+The answers are scripted, and they last only as long as the page. Read marks and comments are saved in the browser.
 
 ## Rendering
 

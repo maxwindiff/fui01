@@ -12,8 +12,10 @@ export interface Step {
   code?: { file: string; text: string };
 }
 
-// `diagram` holds Mermaid source.
-export interface Flow { id: string; title: string; steps: Step[]; diagram?: string }
+// A diagram between the steps of a flow, in Mermaid.
+export interface Figure { diagram: string }
+
+export interface Flow { id: string; title: string; steps: (Step | Figure)[] }
 
 export interface Finding { id: string; at: Place; sev: "high" | "medium" | "low"; title: string; body: string }
 

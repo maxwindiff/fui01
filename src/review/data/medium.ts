@@ -23,16 +23,7 @@ export const medium: Review = {
     {
       id: "find", title: "A search that dims or hides",
       steps: [
-        { text: "Typing in the search selects the matching records, marked as coming from the search.", code: { file: "src/ask/Scopes.tsx", text: "const ids = find(t);\nboard.select({ ids, label: `“${t}”`, from: \"find\" });" } },
-        { text: "The selection chip offers Dim and Hide, but only for a search.", at: "src/ask/Scopes.tsx@53:16" },
-        { text: "Pressing one sets findMode, and pressing it again clears it.", at: "src/ask/Scopes.tsx@53:19" },
-        { text: "setFindMode stores the mode.", at: "src/ask/board.ts@129:3" },
-        { text: "useLenses appends the search as a lens with the id FIND while a mode is set.", at: "src/ask/board.ts@103:9" },
-        { text: "onLenses gives it the index -1, so it never gets a lens color.", at: "src/ask/records.ts@84:5" },
-        { text: "Case panels leave it out of the outlines, but it still dims or hides.", at: "src/links.ts@10:13" },
-        { text: "Answers skip lighting it, but it still narrows which marks stay lit.", at: "src/ask/Answers.tsx@173:5" },
-      ],
-      diagram: `sequenceDiagram
+        { diagram: `sequenceDiagram
   actor R as Reader
   participant S as Scopes
   participant B as board
@@ -44,7 +35,16 @@ export const medium: Review = {
   S->>B: setFindMode(hide)
   B-->>L: lenses, sel, findMode
   L-->>P: lenses + FIND
-  P->>P: hide what FIND misses`,
+  P->>P: hide what FIND misses` },
+        { text: "Typing in the search selects the matching records, marked as coming from the search.", code: { file: "src/ask/Scopes.tsx", text: "const ids = find(t);\nboard.select({ ids, label: `“${t}”`, from: \"find\" });" } },
+        { text: "The selection chip offers Dim and Hide, but only for a search.", at: "src/ask/Scopes.tsx@53:16" },
+        { text: "Pressing one sets findMode, and pressing it again clears it.", at: "src/ask/Scopes.tsx@53:19" },
+        { text: "setFindMode stores the mode.", at: "src/ask/board.ts@129:3" },
+        { text: "useLenses appends the search as a lens with the id FIND while a mode is set.", at: "src/ask/board.ts@103:9" },
+        { text: "onLenses gives it the index -1, so it never gets a lens color.", at: "src/ask/records.ts@84:5" },
+        { text: "Case panels leave it out of the outlines, but it still dims or hides.", at: "src/links.ts@10:13" },
+        { text: "Answers skip lighting it, but it still narrows which marks stay lit.", at: "src/ask/Answers.tsx@173:5" },
+      ],
     },
     {
       id: "keep", title: "Keeping a search as a lens",

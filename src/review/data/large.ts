@@ -23,14 +23,7 @@ export const large: Review = {
     {
       id: "level", title: "Changing the motion level",
       steps: [
-        { text: "The control calls ws.setLevel with the new level.", at: "src/App.tsx@38:37" },
-        { text: "setLevel applies the level, then bumps replays.", at: "src/workspace.tsx@1:115" },
-        { text: "applyMotionLevel keeps the level in motion.level for code outside React, sets three attributes on the root, saves the level and calls the listeners.", at: "src/motion.ts@1:25" },
-        { text: "The GPU scenes listen, and wake to redraw.", at: "src/gpu/scene.ts@61:7" },
-        { text: "Each panel on screen sees replays change and plays its entry again.", at: "src/components/primitives.tsx@117:85" },
-        { text: "CSS keys entry and ambient motion off the attributes on the root.", at: "src/styles/base.css@544:17" },
-      ],
-      diagram: `sequenceDiagram
+        { diagram: `sequenceDiagram
   actor R as Reader
   participant C as MotionControl
   participant W as ws
@@ -43,7 +36,21 @@ export const large: Review = {
   M->>M: root attributes, localStorage
   M->>G: wakeScenes()
   W-->>P: replays + 1
-  P->>P: arm("frame")`,
+  P->>P: arm("frame")` },
+        { text: "The control calls ws.setLevel with the new level.", at: "src/App.tsx@38:37" },
+        { text: "setLevel applies the level, then bumps replays.", at: "src/workspace.tsx@1:115" },
+        { text: "applyMotionLevel keeps the level in motion.level for code outside React, sets three attributes on the root, saves the level and calls the listeners.", at: "src/motion.ts@1:25" },
+        { diagram: `flowchart LR
+  level[motion level] --> motion["data-motion"]
+  level -->|2 or 3| entry["data-entry"]
+  level -->|3| ambient["data-ambient"]
+  motion --> quiet[transitions and responses]
+  entry --> enter[entry animations]
+  ambient --> rest[movement at rest]` },
+        { text: "The GPU scenes listen, and wake to redraw.", at: "src/gpu/scene.ts@61:7" },
+        { text: "Each panel on screen sees replays change and plays its entry again.", at: "src/components/primitives.tsx@117:85" },
+        { text: "CSS keys entry and ambient motion off the attributes on the root.", at: "src/styles/base.css@544:17" },
+      ],
     },
     {
       id: "entry", title: "A panel coming into view",
@@ -51,30 +58,23 @@ export const large: Review = {
         { text: "At Standard and Lively a panel starts pending, which CSS draws at opacity 0.", at: "src/components/primitives.tsx@117:37" },
         { text: "One IntersectionObserver serves every panel. Panels reported in the same batch get consecutive order numbers.", at: "src/components/primitives.tsx@117:13" },
         { text: "On first sight, arm sets data-enter on the next frame, with the order as the stagger index.", at: "src/components/primitives.tsx@117:52" },
-        { text: "CSS animates the frame and then its marks, delayed by the panel's index and each mark's --k.", at: "src/styles/base.css@544:30" },
-        { text: "At Lively, figures count up when the panel plays.", at: "src/components/primitives.tsx@236:4" },
-        { text: "The GPU reveal waits until the panel is no longer pending.", at: "src/gpu/scene.ts@144:20" },
-      ],
-      diagram: `stateDiagram-v2
+        { diagram: `stateDiagram-v2
   state "pending (data-pending)" as pending
   state "entering (data-enter)" as entering
   [*] --> pending: Standard or Lively
   [*] --> settled: Still or Quiet
   pending --> entering: comes into view
   entering --> settled: 5.2 s later
-  settled --> pending: leaves view at Lively`,
+  settled --> pending: leaves view at Lively` },
+        { text: "CSS animates the frame and then its marks, delayed by the panel's index and each mark's --k.", at: "src/styles/base.css@544:30" },
+        { text: "At Lively, figures count up when the panel plays.", at: "src/components/primitives.tsx@236:4" },
+        { text: "The GPU reveal waits until the panel is no longer pending.", at: "src/gpu/scene.ts@144:20" },
+      ],
     },
     {
       id: "stage", title: "Staging a panel",
       steps: [
-        { text: "setStage remembers the scroll position and calls morph.", at: "src/workspace.tsx@1:81" },
-        { text: "morph pauses the GPU views and starts a view transition.", at: "src/workspace.tsx@1:47" },
-        { text: "While paused, the network camera jumps to its new pose instead of gliding.", at: "src/components/NetworkView.tsx@70:6" },
-        { text: "The frame loop stops advancing the travel clock.", at: "src/gpu/scene.ts@61:17" },
-        { text: "When the transition finishes, the last running morph resumes and wakes the scenes.", at: "src/workspace.tsx@1:49" },
-        { text: "The staged panel plays its content entry.", at: "src/components/primitives.tsx@117:89" },
-      ],
-      diagram: `sequenceDiagram
+        { diagram: `sequenceDiagram
   participant P as Panel
   participant W as ws
   participant M as morph
@@ -86,23 +86,30 @@ export const large: Review = {
   M->>B: startViewTransition
   B-->>M: finished
   M->>G: paused = false, wake
-  P->>P: arm("content")`,
+  P->>P: arm("content")` },
+        { text: "setStage remembers the scroll position and calls morph.", at: "src/workspace.tsx@1:81" },
+        { text: "morph pauses the GPU views and starts a view transition.", at: "src/workspace.tsx@1:47" },
+        { text: "While paused, the network camera jumps to its new pose instead of gliding.", at: "src/components/NetworkView.tsx@70:6" },
+        { text: "The frame loop stops advancing the travel clock.", at: "src/gpu/scene.ts@61:17" },
+        { text: "When the transition finishes, the last running morph resumes and wakes the scenes.", at: "src/workspace.tsx@1:49" },
+        { text: "The staged panel plays its content entry.", at: "src/components/primitives.tsx@117:89" },
+      ],
     },
     {
       id: "store", title: "Reading the workspace",
       steps: [
-        { text: "State lives in a module variable, and set notifies every subscriber.", at: "src/workspace.tsx@1:21" },
-        { text: "useWs subscribes with a selector, so a component re-renders only when its slice changes.", at: "src/workspace.tsx@1:31" },
-        { text: "Panel reads stage and replays through selectors.", at: "src/components/primitives.tsx@117:32" },
-        { text: "Crumbs still reads the whole state through useWorkspace.", at: "src/components/Crumbs.tsx@1:34" },
-      ],
-      diagram: `flowchart LR
+        { diagram: `flowchart LR
   set["set(patch)"] --> subs[every subscriber]
   subs --> panel["Panel: useWs(selector)"]
   subs --> crumbs["Crumbs: useWorkspace()"]
   panel -->|slice changed| rp[re-render]
   panel -->|slice unchanged| skip[no render]
-  crumbs -->|any change| rc[re-render]`,
+  crumbs -->|any change| rc[re-render]` },
+        { text: "State lives in a module variable, and set notifies every subscriber.", at: "src/workspace.tsx@1:21" },
+        { text: "useWs subscribes with a selector, so a component re-renders only when its slice changes.", at: "src/workspace.tsx@1:31" },
+        { text: "Panel reads stage and replays through selectors.", at: "src/components/primitives.tsx@117:32" },
+        { text: "Crumbs still reads the whole state through useWorkspace.", at: "src/components/Crumbs.tsx@1:34" },
+      ],
     },
   ],
   order: [

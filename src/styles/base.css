@@ -4,12 +4,13 @@ html[data-mode="dark"] { color-scheme: dark; }
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg-image) fixed;
   color: var(--ink);
   font: var(--ui-size) / 1.4 var(--font-ui);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
+/* A fixed layer instead of a fixed background, which repaints on every scroll and trails behind fast scrolling. */
+html::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--bg-image); pointer-events: none; }
 h1, h2, h3, h4, p, ul, ol, dl, dd, figure { margin: 0; padding: 0; }
 ul, ol { list-style: none; }
 button, input { font: inherit; color: inherit; }

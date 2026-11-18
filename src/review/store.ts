@@ -2,19 +2,22 @@ import { useSyncExternalStore } from "react";
 import type { Place } from "./types";
 
 // What the reviewer has done to each change: the hunks read, the comments written, and the agent's draft comments
-// accepted or dismissed. These are saved in the browser. The summarization level and the view are saved too, and
-// the answers to questions last only as long as the page.
+// accepted or dismissed. These are saved in the browser. The summarization level, the diff layout and the view are
+// saved too, and the answers to questions last only as long as the page.
 
 export type ChangeId = "small" | "medium" | "large";
 export type Level = 0 | 1 | 2;
+export type Layout = "unified" | "split";
 export type View = { kind: "files" } | { kind: "flow"; id: string };
 export interface Comment { id: string; at: Place; text: string; synced: boolean; from?: string }
-export interface Asked { q: string; a: string | null }
+// A question asked about a line has `at`, and one about the whole change has none.
+export interface Asked { id: string; q: string; a: string | null; at?: Place }
 
 interface PerChange { read: string[]; comments: Comment[]; drafts: Record<string, "accepted" | "dismissed"> }
 export interface ReviewState {
   change: ChangeId;
   level: Level;
+  layout: Layout;
   view: View;
   per: Record<ChangeId, PerChange>;
   // Pseudocode opened by hand as `hunk#from`, and read hunks opened again by hand, by hunk key.
@@ -29,8 +32,8 @@ export interface ReviewState {
 const KEY = "fui01-review";
 const empty = (): PerChange => ({ read: [], comments: [], drafts: {} });
 
-function restore(): Pick<ReviewState, "change" | "level" | "view" | "per"> {
-  const base = { change: "small" as ChangeId, level: 1 as Level, view: { kind: "files" } as View, per: { small: empty(), medium: empty(), large: empty() } };
+function restore(): Pick<ReviewState, "change" | "level" | "layout" | "view" | "per"> {
+  const base = { change: "small" as ChangeId, level: 1 as Level, layout: "unified" as Layout, view: { kind: "files" } as View, per: { small: empty(), medium: empty(), large: empty() } };
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
     if (s?.per) return { ...base, ...s, per: { ...base.per, ...s.per } };
@@ -42,7 +45,7 @@ let state: ReviewState = { ...restore(), open: [], writing: null, draft: null, a
 const subs = new Set<() => void>();
 function set(patch: Partial<ReviewState>) {
   state = { ...state, ...patch };
-  try { localStorage.setItem(KEY, JSON.stringify({ change: state.change, level: state.level, view: state.view, per: state.per })); } catch { /* storage can be blocked */ }
+  try { localStorage.setItem(KEY, JSON.stringify({ change: state.change, level: state.level, layout: state.layout, view: state.view, per: state.per })); } catch { /* storage can be blocked */ }
   subs.forEach((f) => f());
 }
 const mine = () => state.per[state.change];
@@ -57,6 +60,7 @@ let n = 0;
 export const review = {
   setChange(change: ChangeId) { if (change !== state.change) set({ change, view: { kind: "files" }, open: [], writing: null, draft: null, focus: null }); },
   setLevel(level: Level) { set({ level, open: [] }); },
+  setLayout(layout: Layout) { set({ layout }); },
   show(view: View) { set({ view }); },
   focus(at: Place | null) { set({ focus: at }); },
   reopen(key: string) { if (!state.open.includes(key)) set({ open: [...state.open, key] }); },
@@ -82,5 +86,9 @@ export const review = {
     patchMine({ drafts: { ...mine().drafts, [finding]: verdict } });
     if (state.draft === finding) set({ draft: null });
   },
-  ask(q: string, a: string | null) { set({ asked: { ...state.asked, [state.change]: [{ q, a }, ...state.asked[state.change]] } }); },
+  ask(q: string, a: string | null, at?: Place) {
+    const x: Asked = { id: `q${n++}`, q, a, at };
+    set({ asked: { ...state.asked, [state.change]: [x, ...state.asked[state.change]] }, writing: null });
+  },
+  unask(id: string) { set({ asked: { ...state.asked, [state.change]: state.asked[state.change].filter((x) => x.id !== id) } }); },
 };

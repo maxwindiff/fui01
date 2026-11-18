@@ -108,7 +108,7 @@ function CaseBoard({ theme }: { theme: Theme }) {
 
 type Page = "case" | "review";
 const fromHash = () => themeById(location.hash.slice(1).split("/")[0]).id;
-const pageFromHash = (): Page => (location.hash.slice(1).split("/")[1] === "review" ? "review" : "case");
+const pageFromHash = (): Page => (location.hash.slice(1).split("/")[1] === "case" ? "case" : "review");
 
 export function App() {
   const [id, setId] = useState(fromHash);
@@ -129,7 +129,7 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
-    history.replaceState(null, "", `#${theme.id}${page === "review" ? "/review" : ""}`);
+    history.replaceState(null, "", `#${theme.id}/${page}`);
   }, [theme, page]);
 
   useEffect(() => {
@@ -161,7 +161,7 @@ export function App() {
       <TipLayer notes={notes} />
       <header className="switcher">
         <Segmented label="Theme" value={id} onChange={setId} options={THEMES.map((t, i) => ({ value: t.id, label: t.name, tip: `Key ${i + 1}` }))} />
-        <Segmented label="Page" value={page} onChange={setPage} options={[{ value: "case", label: "Case" }, { value: "review", label: "Review" }]} />
+        <Segmented label="Page" value={page} onChange={setPage} options={[{ value: "review", label: "Review" }, { value: "case", label: "Case" }]} />
         {page === "case" ? <Crumbs root="Whitcombe case" /> : <span className="crumbs" />}
         <MotionControl />
         {page === "case" ? <BriefButton /> : null}

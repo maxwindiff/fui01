@@ -8,7 +8,7 @@ import type { Finding, Flow, HunkNote, Place, Review as Notes, Span } from "./ty
 import { highlight, langOf } from "./highlight";
 import type { Lang } from "./highlight";
 import { getReview, review, useReview } from "./store";
-import type { ChangeId, Comment, Level } from "./store";
+import type { Asked, ChangeId, Comment, Layout, Level } from "./store";
 import smallRaw from "./changes/small.diff?raw";
 import mediumRaw from "./changes/medium.diff?raw";
 import largeRaw from "./changes/large.diff?raw";
@@ -17,8 +17,8 @@ import { medium } from "./data/medium";
 import { large } from "./data/large";
 import "../styles/review.css";
 
-// The review page: the files and the agent's notes on the left, the change itself in the middle, and comments,
-// answers and the question box on the right.
+// The review page: the files and the agent's notes on the left, and the change itself across the rest. Questions about
+// the whole change go in the toolbar, and questions about a line go in the box under it.
 
 interface Change { id: ChangeId; label: string; commit: Commit; notes: Notes; hunks: Map<string, Hunk> }
 const CHANGES: Change[] = ([["small", "Small", smallRaw, small], ["medium", "Medium", mediumRaw, medium], ["large", "Large", largeRaw, large]] as const).map(([id, label, raw, notes]) => {
@@ -54,19 +54,10 @@ function Rich({ text }: { text: string }) {
 
 const X = () => <svg viewBox="0 0 8 8" width="8" height="8" aria-hidden="true"><path d="M1 1 7 7M7 1 1 7" /></svg>;
 
-function where(c: Change, p: Place) {
-  const { key, i } = split(p);
-  const h = c.hunks.get(key);
-  const l = h && i !== null ? h.lines[i] : null;
-  const name = (h?.file ?? key).split("/").pop();
-  return l ? `${name}:${l.neu ?? l.old}` : name;
-}
-
-function CommentCard({ c, change }: { c: Comment; change?: Change }) {
+function CommentCard({ c }: { c: Comment }) {
   return (
     <div className={`rv-cmt${c.synced ? " synced" : ""}`}>
       <p className="rv-cmt-h">
-        {change ? <a href={`#${c.at}`} className="rv-link" onClick={(e) => { e.preventDefault(); goto(c.at); }}>{where(change, c.at)}</a> : null}
         <span className="rv-cmt-s">{c.synced ? "On GitHub" : "Not synced"}</span>
         {c.synced ? null : <button type="button" className="ask-x" aria-label="Delete the comment" data-tip="Delete" onClick={() => review.removeComment(c.id)}><X /></button>}
       </p>
@@ -83,16 +74,23 @@ function CommentBox({ at, initial = "", from, onCancel = () => review.write(null
     review.comment(at, text.trim(), from);
     if (from) review.decide(from, "accepted");
   };
+  const notes = changeOf(getReview().change).notes;
+  const ask = (q = text.trim()) => { if (q) review.ask(q, answer(notes, q), at); };
+  // Questions with a scripted answer that links into this hunk.
+  const asked = getReview().asked[getReview().change];
+  const near = from ? [] : notes.qa.filter((x) => x.a.includes(`](${split(at).key}`) && !asked.some((a) => a.q === x.q && a.at));
   return (
     <div className="rv-cmt rv-write" onClick={(e) => e.stopPropagation()}>
       <textarea
-        autoFocus rows={3} value={text} aria-label="Comment" placeholder="Comment" onChange={(e) => setText(e.target.value)}
+        autoFocus rows={3} value={text} aria-label="Comment or question" placeholder={from ? "Comment" : "Comment, or ask the agent"} onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); if (e.key === "Escape") onCancel(); }}
       />
       <p className="actions">
         <button type="button" className="btn primary" disabled={!text.trim()} onClick={send}>Comment</button>
+        {from ? null : <button type="button" className="btn" disabled={!text.trim()} onClick={() => ask()}>Ask agent</button>}
         <button type="button" className="btn quiet" onClick={onCancel}>Cancel</button>
       </p>
+      {near.length ? <div className="chips">{near.map((x) => <button key={x.q} type="button" className="chip" onClick={() => ask(x.q)}>{x.q}</button>)}</div> : null}
     </div>
   );
 }
@@ -115,20 +113,36 @@ function Draft({ f }: { f: Finding }) {
   );
 }
 
-// What hangs under a row: comments, the agent's open drafts, and the box for a new comment.
+function Answer({ x, onClose }: { x: Asked; onClose?: () => void }) {
+  return (
+    <div className="rv-cmt rv-qa" onClick={(e) => e.stopPropagation()}>
+      <p className="rv-cmt-h">
+        <span className="rv-qa-q">{x.q}</span>
+        {onClose ? <button type="button" className="ask-x" aria-label="Remove the answer" data-tip="Remove" onClick={onClose}><X /></button> : null}
+      </p>
+      {x.a ? <p className="rv-qa-a"><Rich text={x.a} /></p> : <p className="note">Couldn't answer that.</p>}
+    </div>
+  );
+}
+
+// What hangs under a row: comments, the agent's open drafts, answers to questions about the row, and the box for a new
+// comment.
 function Attached({ change, hkey, from, to }: { change: Change; hkey: string; from: number; to: number }) {
   const per = useReview((s) => s.per[change.id]);
+  const asked = useReview((s) => s.asked[change.id]);
   const writing = useReview((s) => s.writing);
   const shown = useReview((s) => s.draft);
   const inRow = (p: Place) => { const { key, i } = split(p); return key === hkey && i !== null && i >= from && i <= to; };
   const comments = per.comments.filter((c) => inRow(c.at));
   const drafts = change.notes.findings.filter((f) => f.id === shown && inRow(f.at) && !per.drafts[f.id]);
   const box = writing && inRow(writing) ? writing : null;
-  if (!comments.length && !drafts.length && !box) return null;
+  const answers = asked.filter((x) => x.at && inRow(x.at)).reverse();
+  if (!comments.length && !drafts.length && !answers.length && !box) return null;
   return (
     <div className="rv-notes">
       {drafts.map((f) => <Draft key={f.id} f={f} />)}
       {comments.map((c) => <CommentCard key={c.id} c={c} />)}
+      {answers.map((x) => <Answer key={x.id} x={x} onClose={() => review.unask(x.id)} />)}
       {box ? <CommentBox at={box} /> : null}
     </div>
   );
@@ -199,9 +213,37 @@ const tone = (sign: string) => (sign === "+" ? " add" : sign === "−" ? " del" 
 // Whether the spans fold away every changed line of the hunk.
 const folded = (h: Hunk, spans: Span[]) => h.lines.every((l, i) => l.k === " " || spans.some(([a, b, t]) => !t && i >= a && i <= b));
 
+const keyOf = (r: Row) => (r.kind === "line" ? `${r.i}` : r.kind === "fold" ? `f${r.from}` : `p${r.from}.${r.text}`);
+const sideOf = (h: Hunk, r: Row) => {
+  if (r.kind === "fold") return "fold";
+  const k = r.kind === "line" ? h.lines[r.i].k : signOf(h, r.from, r.to);
+  return k === "-" || k === "−" ? "old" : k === "+" ? "new" : "both";
+};
+type Pair = { kind: "fold"; row: Row } | { kind: "both"; row: Row } | { kind: "pair"; l?: Row; r?: Row };
+
+// For the split layout: a run of removed rows and the run of added rows after it share lines, side by side.
+function pairsOf(h: Hunk, rows: Row[]): Pair[] {
+  const out: Pair[] = [];
+  let left: Row[] = [], right: Row[] = [];
+  const flush = () => {
+    for (let k = 0; k < Math.max(left.length, right.length); k++) out.push({ kind: "pair", l: left[k], r: right[k] });
+    left = [];
+    right = [];
+  };
+  for (const r of rows) {
+    const side = sideOf(h, r);
+    if (side === "old") { if (right.length) flush(); left.push(r); }
+    else if (side === "new") right.push(r);
+    else { flush(); out.push(side === "fold" ? { kind: "fold", row: r } : { kind: "both", row: r }); }
+  }
+  flush();
+  return out;
+}
+
 // A read hunk folds to its header, and selecting the header opens it again. Excerpts in flows stay open.
 function HunkView({ change, h, near, bare, force }: { change: Change; h: Hunk; near?: number | null; bare?: boolean; force?: boolean }) {
   const level = useReview((s) => s.level);
+  const layout = useReview((s) => s.layout);
   const open = useReview((s) => s.open);
   const focus = useReview((s) => s.focus);
   const read = useReview((s) => s.per[change.id].read.includes(h.key));
@@ -217,6 +259,45 @@ function HunkView({ change, h, near, bare, force }: { change: Change; h: Hunk; n
   const here = near == null && f?.key === h.key ? f.i : null;
   const toggle = (from: number) => (e: MouseEvent) => { e.stopPropagation(); review.toggleOpen(`${h.key}#${from}`); };
   const shut = read && near == null && !bare && !force && !open.includes(h.key);
+  const isHere = (from: number, to: number) => (here !== null && here >= from && here <= to ? " here" : "");
+  const attach = (r: Row) => {
+    if (r.kind === "line") return <Attached change={change} hkey={h.key} from={r.i} to={r.i} />;
+    return r.kind === "fold" || r.last ? <Attached change={change} hkey={h.key} from={r.from} to={r.to} /> : null;
+  };
+  // In the split layout `side` picks the old or the new line number.
+  const cell = (r: Row, side?: "old" | "new") => {
+    if (r.kind === "fold") {
+      const n = r.to - r.from + 1;
+      return (
+        <button type="button" className={`rv-ln rv-fold${isHere(r.from, r.to)}`} onClick={toggle(r.from)}>
+          <span className="rv-no" /><span className="rv-sign">⋯</span><span>{n} {n === 1 ? "line" : "lines"}</span>
+        </button>
+      );
+    }
+    if (r.kind === "pseudo") {
+      const sign = signOf(h, r.from, r.to);
+      return (
+        <button
+          key={side} type="button" className={`rv-ln rv-pseudo${tone(sign)}${r.first ? " first" : ""}${isHere(r.from, r.to)}`}
+          onClick={(e) => { hideOriginal(); toggle(r.from)(e); }}
+          onPointerMove={(e) => showOriginal(`${h.key}#${r.from}`, e.currentTarget.querySelector("code")!, <Original h={h} from={r.from} to={r.to} />)}
+          onPointerLeave={hideOriginal}
+        >
+          <span className="rv-no" /><span className="rv-sign">{sign}</span><Code text={r.text} lang={sign === " " ? "plain" : lang} pseudo />
+        </button>
+      );
+    }
+    const l = h.lines[r.i];
+    const no = side === "old" ? l.old : side === "new" ? l.neu : l.neu ?? l.old;
+    return (
+      <div key={side} className={`rv-ln${l.k === "+" ? " add" : l.k === "-" ? " del" : ""}${r.span !== null ? " opened" : ""}${here === r.i ? " here" : ""}`}>
+        {r.span !== null && side !== "new" ? <button type="button" className="rv-shut" aria-label="Collapse" onClick={toggle(r.span)} /> : null}
+        <button type="button" className="rv-no num" aria-label={`Comment on line ${no}`} data-tip="Comment" onClick={(e) => { e.stopPropagation(); review.write(`${h.key}:${r.i}`); }}>{no}</button>
+        <span className="rv-sign">{l.k === "-" ? "−" : l.k}</span>
+        <Code text={l.text} lang={l.k === " " ? "plain" : lang} />
+      </div>
+    );
+  };
   return (
     <section className={`rv-hunk${read ? " read" : ""}${near == null && f?.key === h.key ? " focus" : ""}`} data-hunk={near == null ? h.key : undefined}>
       {bare ? null : (
@@ -227,48 +308,21 @@ function HunkView({ change, h, near, bare, force }: { change: Change; h: Hunk; n
         </header>
       )}
       <Fold open={!shut}>
-        <div className="rv-code">
-          {rows.map((r) => {
-            if (r.kind === "fold") {
-              const n = r.to - r.from + 1;
+        <div className={`rv-code${layout === "split" ? " split" : ""}`}>
+          {layout === "split"
+            ? pairsOf(h, rows).map((p) => {
+              if (p.kind === "fold") return <Fragment key={keyOf(p.row)}>{cell(p.row)}{attach(p.row)}</Fragment>;
+              const rs = p.kind === "both" ? [p.row] : [p.l, p.r].filter((r): r is Row => !!r);
               return (
-                <Fragment key={`f${r.from}`}>
-                  <button type="button" className={`rv-ln rv-fold${here !== null && here >= r.from && here <= r.to ? " here" : ""}`} onClick={toggle(r.from)}>
-                    <span className="rv-no" /><span className="rv-sign">⋯</span><span>{n} {n === 1 ? "line" : "lines"}</span>
-                  </button>
-                  <Attached change={change} hkey={h.key} from={r.from} to={r.to} />
+                <Fragment key={p.kind === "both" ? keyOf(p.row) : rs.map(keyOf).join("|")}>
+                  <div className="rv-pair">
+                    {p.kind === "both" ? <>{cell(p.row, "old")}{cell(p.row, "new")}</> : <>{p.l ? cell(p.l, "old") : <span className="rv-ln blank" />}{p.r ? cell(p.r, "new") : <span className="rv-ln blank" />}</>}
+                  </div>
+                  {rs.map((r) => <Fragment key={keyOf(r)}>{attach(r)}</Fragment>)}
                 </Fragment>
               );
-            }
-            if (r.kind === "pseudo") {
-              const sign = signOf(h, r.from, r.to);
-              return (
-                <Fragment key={`p${r.from}.${r.text}`}>
-                  <button
-                  type="button" className={`rv-ln rv-pseudo${tone(sign)}${r.first ? " first" : ""}${here !== null && here >= r.from && here <= r.to ? " here" : ""}`}
-                  onClick={(e) => { hideOriginal(); toggle(r.from)(e); }}
-                  onPointerMove={(e) => showOriginal(`${h.key}#${r.from}`, e.currentTarget.querySelector("code")!, <Original h={h} from={r.from} to={r.to} />)}
-                  onPointerLeave={hideOriginal}
-                >
-                    <span className="rv-no" /><span className="rv-sign">{sign}</span><Code text={r.text} lang={sign === " " ? "plain" : lang} pseudo />
-                  </button>
-                  {r.last ? <Attached change={change} hkey={h.key} from={r.from} to={r.to} /> : null}
-                </Fragment>
-              );
-            }
-            const l = h.lines[r.i];
-            return (
-              <Fragment key={r.i}>
-                <div className={`rv-ln${l.k === "+" ? " add" : l.k === "-" ? " del" : ""}${r.span !== null ? " opened" : ""}${here === r.i ? " here" : ""}`}>
-                  {r.span !== null ? <button type="button" className="rv-shut" aria-label="Collapse" onClick={toggle(r.span)} /> : null}
-                  <button type="button" className="rv-no num" aria-label={`Comment on line ${l.neu ?? l.old}`} data-tip="Comment" onClick={(e) => { e.stopPropagation(); review.write(`${h.key}:${r.i}`); }}>{l.neu ?? l.old}</button>
-                  <span className="rv-sign">{l.k === "-" ? "−" : l.k}</span>
-                  <Code text={l.text} lang={l.k === " " ? "plain" : lang} />
-                </div>
-                <Attached change={change} hkey={h.key} from={r.i} to={r.i} />
-              </Fragment>
-            );
-          })}
+            })
+            : rows.map((r) => <Fragment key={keyOf(r)}>{cell(r)}{attach(r)}</Fragment>)}
         </div>
       </Fold>
     </section>
@@ -283,6 +337,10 @@ function ReadButton({ keys, on, label = "Mark as read", small }: { keys: string[
   );
 }
 
+// Build output, lockfiles and caches stay closed, and their hunks are not drawn, until the reviewer opens them.
+const GENERATED = /(\.tsbuildinfo|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|\.min\.(js|css)|\.map)$|(^|\/)(dist|build)\//;
+const generated = (path: string) => GENERATED.test(path);
+
 function FileView({ change, f }: { change: Change; f: FileDiff }) {
   const read = useReview((s) => s.per[change.id].read);
   const keys = f.hunks.map((h) => h.key);
@@ -291,18 +349,25 @@ function FileView({ change, f }: { change: Change; f: FileDiff }) {
   const bare = f.hunks.length === 1 && !f.hunks[0].head;
   const [peek, setPeek] = useState(false);
   useEffect(() => setPeek(false), [all]);
-  const shown = !all || peek || keys.some((k) => open.includes(k));
+  // A generated file with comments on it opens like any other file.
+  const noted = useReview((s) => s.per[change.id].comments.some((c) => keys.includes(split(c.at).key)));
+  const gen = generated(f.path) && !noted;
+  const shown = (!all && !gen) || peek || keys.some((k) => open.includes(k));
+  const [loaded, setLoaded] = useState(!gen);
+  useEffect(() => { if (shown) setLoaded(true); }, [shown]);
   return (
     <article className={`rv-file${shown ? "" : " shut"}`} data-file={f.path}>
-      <header className="rv-fh" onClick={all ? () => setPeek(!peek) : undefined}>
+      <header className="rv-fh" onClick={all || gen ? () => setPeek(!peek) : undefined}>
         <h3 className="rv-path"><span className="dim">{f.path.split("/").slice(0, -1).join("/")}{f.path.includes("/") ? "/" : ""}</span>{f.path.split("/").pop()}</h3>
         {f.status !== "modified" ? <span className="tag">{f.status}</span> : null}
+        {generated(f.path) ? <span className="tag">generated</span> : null}
         <span className="rv-stat num"><b className="rv-plus">+{f.add}</b> <b className="rv-minus">−{f.del}</b></span>
+        {gen && !loaded ? <button type="button" className="btn quiet rv-load" onClick={(e) => { e.stopPropagation(); setPeek(true); }}>Load diff</button> : null}
         <ReadButton keys={keys} on={all} label="Mark file as read" />
       </header>
       <Fold open={shown}>
-        {f.hunks.map((h) => <HunkView key={h.key} change={change} h={h} bare={bare} force={peek} />)}
-        {f.hunks.length > 1 ? <footer className="rv-ff"><ReadButton keys={keys} on={all} label="Mark file as read" /></footer> : null}
+        {loaded ? f.hunks.map((h) => <HunkView key={h.key} change={change} h={h} bare={bare} force={peek} />) : null}
+        {loaded && f.hunks.length > 1 ? <footer className="rv-ff"><ReadButton keys={keys} on={all} label="Mark file as read" /></footer> : null}
       </Fold>
     </article>
   );
@@ -330,20 +395,22 @@ function Diagram({ text }: { text: string }) {
 }
 
 function FlowView({ change, flow }: { change: Change; flow: Flow }) {
+  useEffect(() => { scrollTo({ top: 0 }); }, [flow.id]);
   return (
     <article className="rv-flow">
       <header className="rv-flow-h">
         <button type="button" className="btn quiet" onClick={() => review.show({ kind: "files" })}>All files</button>
         <h2 className="rv-flow-t">{flow.title}</h2>
       </header>
-      {flow.diagram ? <Diagram text={flow.diagram} /> : null}
       <ol className="rv-steps">
         {flow.steps.map((s, k) => {
+          if ("diagram" in s) return <li key={k} className="rv-fig"><Diagram text={s.diagram} /></li>;
+          const n = flow.steps.slice(0, k + 1).filter((x) => !("diagram" in x)).length;
           const at = s.at ? split(s.at) : null;
           const h = at ? change.hunks.get(at.key) : undefined;
           return (
             <li key={k}>
-              <p className="rv-step"><span className="rv-step-n num">{k + 1}</span><span><Rich text={s.text} /></span></p>
+              <p className="rv-step"><span className="rv-step-n num">{n}</span><span><Rich text={s.text} /></span></p>
               {h ? <HunkView change={change} h={h} near={at!.i} /> : null}
               {s.code ? <pre className="rv-quote"><span className="rv-quote-f">{s.code.file}</span>{s.code.text}</pre> : null}
             </li>
@@ -406,11 +473,17 @@ function Rail({ change }: { change: Change }) {
   const per = useReview((s) => s.per[change.id]);
   const view = useReview((s) => s.view);
   const shown = useReview((s) => s.draft);
+  const el = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const ro = new ResizeObserver(([e]) => el.current!.style.setProperty("--rail-h", `${e.borderBoxSize[0].blockSize}px`));
+    ro.observe(el.current!);
+    return () => ro.disconnect();
+  }, []);
   const n = change.notes;
   const tree = useMemo(() => buildTree(change.commit.files.map((f) => f.path)), [change]);
-  const flowKeys = (f: Flow) => [...new Set(f.steps.flatMap((s) => (s.at ? [split(s.at).key] : [])))];
+  const flowKeys = (f: Flow) => [...new Set(f.steps.flatMap((s) => ("at" in s && s.at ? [split(s.at).key] : [])))];
   return (
-    <aside className="rv-rail" aria-label="Files and notes">
+    <aside className="rv-rail" ref={el} aria-label="Files and notes">
       <section>
         <h4 className="sub-h">Files</h4>
         <ul className="rv-tree"><Tree change={change} nodes={tree} depth={0} /></ul>
@@ -480,48 +553,55 @@ function answer(n: Notes, q: string) {
   return best && best.score >= 0.6 ? best.a : null;
 }
 
-function Side({ change }: { change: Change }) {
-  const per = useReview((s) => s.per[change.id]);
-  const asked = useReview((s) => s.asked[change.id]);
+// Questions about the whole change. The answers open under the field and close when the reviewer follows a link in one.
+function Ask({ change }: { change: Change }) {
+  const asked = useReview((s) => s.asked[change.id]).filter((x) => !x.at);
   const [q, setQ] = useState("");
-  const unsynced = per.comments.filter((c) => !c.synced).length;
-  const ask = (text: string) => { const t = text.trim(); if (!t) return; review.ask(t, answer(change.notes, t)); setQ(""); };
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
+  const ask = (text: string) => { const t = text.trim(); if (!t) return; review.ask(t, answer(change.notes, t)); setQ(""); setOpen(true); };
   const left = change.notes.qa.filter((x) => !asked.some((a) => a.q === x.q));
+  useEffect(() => {
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "/" && !(e.target as HTMLElement).closest("input, textarea")) { e.preventDefault(); field.current?.focus(); }
+    };
+    addEventListener("pointerdown", away);
+    addEventListener("keydown", key);
+    return () => { removeEventListener("pointerdown", away); removeEventListener("keydown", key); };
+  }, []);
   return (
-    <aside className="rv-side" aria-label="Comments and answers">
-      <section>
-        <header className="rv-side-h">
-          <h4 className="sub-h">Comments</h4>
-          <button type="button" className="btn primary rv-sync" disabled={!unsynced} onClick={review.sync}>{unsynced ? `Sync ${unsynced} to GitHub` : per.comments.length ? "Synced with GitHub" : "Sync to GitHub"}</button>
-        </header>
-        {per.comments.length ? <div className="rv-cmts">{[...per.comments].reverse().map((c) => <CommentCard key={c.id} c={c} change={change} />)}</div> : null}
-      </section>
-      <section className="rv-ask">
-        <h4 className="sub-h">Questions</h4>
-        <form onSubmit={(e) => { e.preventDefault(); ask(q); }}>
-          <textarea rows={2} value={q} placeholder="Ask about this change" aria-label="Question" onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(q); } }} />
-          <button type="submit" className="btn" disabled={!q.trim()}>Ask</button>
-        </form>
-        {left.length ? <div className="chips">{left.map((x) => <button key={x.q} type="button" className="chip" onClick={() => ask(x.q)}>{x.q}</button>)}</div> : null}
-        {asked.map((x, i) => (
-          <div key={asked.length - i} className="rv-answer">
-            <p className="rv-answer-q">{x.q}</p>
-            {x.a ? <p className="rv-answer-a"><Rich text={x.a} /></p> : <p className="note">Couldn't answer that.</p>}
-          </div>
-        ))}
-      </section>
-    </aside>
+    <div className={`rv-ask${open ? " open" : ""}`} ref={box} onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); field.current?.blur(); } }}>
+      <form onSubmit={(e) => { e.preventDefault(); ask(q); }}>
+        <input ref={field} type="text" value={q} placeholder="Ask about this change" aria-label="Question" onFocus={() => setOpen(true)} onChange={(e) => setQ(e.target.value)} />
+      </form>
+      {open && (left.length || asked.length) ? (
+        <div className="rv-ask-pop" onClick={(e) => { if ((e.target as HTMLElement).closest(".rv-link")) setOpen(false); }}>
+          {left.length ? <div className="chips">{left.map((x) => <button key={x.q} type="button" className="chip" onClick={() => ask(x.q)}>{x.q}</button>)}</div> : null}
+          {asked.map((x) => <Answer key={x.id} x={x} />)}
+        </div>
+      ) : null}
+    </div>
   );
+}
+
+function Sync({ change }: { change: Change }) {
+  const comments = useReview((s) => s.per[change.id].comments);
+  const unsynced = comments.filter((c) => !c.synced).length;
+  return <button type="button" className="btn primary rv-sync" disabled={!unsynced} onClick={review.sync}>{unsynced ? `Sync ${unsynced} to GitHub` : comments.length ? "Synced with GitHub" : "Sync to GitHub"}</button>;
 }
 
 export function Review() {
   const id = useReview((s) => s.change);
   const level = useReview((s) => s.level);
+  const layout = useReview((s) => s.layout);
   const view = useReview((s) => s.view);
   const read = useReview((s) => s.per[s.change].read);
   const change = changeOf(id);
   const order = useMemo(() => change.notes.order.map((p) => change.commit.files.find((f) => f.path === p)!), [change]);
-  const keys = useMemo(() => order.flatMap((f) => f.hunks.map((h) => h.key)), [order]);
+  // Generated files count toward neither the progress nor `n`.
+  const keys = useMemo(() => order.filter((f) => !generated(f.path)).flatMap((f) => f.hunks.map((h) => h.key)), [order]);
   const flow = view.kind === "flow" ? change.notes.flows.find((f) => f.id === view.id) : undefined;
 
   // n jumps to the next unread hunk after the one in focus.
@@ -542,19 +622,21 @@ export function Review() {
   return (
     <div className="rv">
       <div className="rv-bar" role="toolbar" aria-label="Change">
-        <Segmented label="Change" value={id} onChange={(v) => review.setChange(v)} options={CHANGES.map((x) => ({ value: x.id, label: x.label, tip: `${x.commit.sha.slice(0, 7)} ${x.commit.title}` }))} />
+        <span className="rv-ex"><span className="label">Example</span><Segmented label="Example" value={id} onChange={(v) => review.setChange(v)} options={CHANGES.map((x) => ({ value: x.id, label: x.label, tip: `${x.commit.sha.slice(0, 7)} ${x.commit.title}` }))} /></span>
+        <Ask key={id} change={change} />
         <span className="rv-gap" />
+        <Segmented<Layout> label="Diff layout" value={layout} onChange={review.setLayout} options={[{ value: "unified", label: "Unified" }, { value: "split", label: "Split" }]} />
         <label className="rv-level">
           <span className="label">{LEVELS[level]}</span>
           <input type="range" min={0} max={2} step={1} value={level} aria-label="Summarization" style={{ ["--p" as string]: `${level * 50}%` }} onChange={(e) => review.setLevel(+e.target.value as Level)} />
         </label>
         <span className="rv-progress"><Meter done={done} all={keys.length} /><span className="num">{done}/{keys.length}</span></span>
+        <Sync change={change} />
       </div>
       <Rail change={change} />
       <main className="rv-main">
         {flow ? <FlowView change={change} flow={flow} /> : <><Description c={c} />{order.map((f) => <FileView key={f.path} change={change} f={f} />)}</>}
       </main>
-      <Side change={change} />
     </div>
   );
 }

@@ -29,17 +29,19 @@ export const small: Review = {
           text: "board.remove drops the card. Its follow-ups stay and move up to the removed card's parent.",
           code: { file: "src/ask/board.ts", text: "const cards = state.cards.filter((c) => c.id !== id).map((c) => (c.from === id ? { ...c, from: gone?.from ?? null, near: gone?.near, y: gone?.y } : c));\nset({ cards, focus: state.focus === id ? null : state.focus, sel: state.sel.from === id ? NONE : state.sel });" },
         },
+        { diagram: `flowchart LR
+  subgraph Before
+    a1[answer] --> b1[removed answer] --> c1[follow-up]
+  end
+  subgraph After
+    a2[answer] --> c2[follow-up]
+  end` },
       ],
     },
     {
       id: "below", title: "Placing answers in Below",
       steps: [
-        { text: "Each answer belongs to the panel its first question was about. Answers about the whole case now go to panel 02.", at: "src/ask/Answers.tsx@618:4" },
-        { text: "For each slot, cols reads how many grid columns it has, at most two.", at: "src/ask/Answers.tsx@618:8" },
-        { text: "A group may fill 85% of the window height per column before older answers fold.", at: "src/ask/Answers.tsx@618:9" },
-        { text: "The slot grid has two columns, and one below 900px.", at: "src/styles/base.css@678:4" },
-      ],
-      diagram: `sequenceDiagram
+        { diagram: `sequenceDiagram
   participant A as useArrange
   participant S as slot in the DOM
   participant F as foldFor
@@ -47,7 +49,12 @@ export const small: Review = {
   A->>S: getComputedStyle: columns
   S-->>A: 1 or 2
   A->>F: limit = 0.85 × window × columns
-  F-->>A: which answers fold`,
+  F-->>A: which answers fold` },
+        { text: "Each answer belongs to the panel its first question was about. Answers about the whole case now go to panel 02.", at: "src/ask/Answers.tsx@618:4" },
+        { text: "For each slot, cols reads how many grid columns it has, at most two.", at: "src/ask/Answers.tsx@618:8" },
+        { text: "A group may fill 85% of the window height per column before older answers fold.", at: "src/ask/Answers.tsx@618:9" },
+        { text: "The slot grid has two columns, and one below 900px.", at: "src/styles/base.css@678:4" },
+      ],
     },
     {
       id: "nodes", title: "Sizing network nodes",
