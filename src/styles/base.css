@@ -220,6 +220,8 @@ button.ent { padding: 0; border: 0; background: none; cursor: pointer; font-size
 .btn.done::before { content: ""; width: 9px; height: 5px; border: solid currentColor; border-width: 0 0 2px 2px; transform: translateY(-1px) rotate(-45deg); animation: tick var(--dur-expand) var(--ease); }
 .seg { display: inline-flex; }
 .seg button + button { margin-left: calc(var(--rule-w) * -1); }
+.seg button:not(:first-child) { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.seg button:not(:last-child) { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .chip.filter { border-style: dashed; border-color: var(--rule); color: var(--ink-3); }
 .chip.filter .glyph { opacity: 0.45; }
 .chip.filter.on { border-style: solid; border-color: var(--rule-strong); color: var(--ink); background: var(--surface-2); }
@@ -762,7 +764,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 [data-family="orrery"] .portrait-frame { border: 1px solid var(--brass); }
 [data-family="orrery"] .portrait img { filter: grayscale(1) contrast(1.15) brightness(0.92); }
 [data-family="orrery"] .tag, [data-family="orrery"] .chip { font-weight: 600; letter-spacing: 0.04em; }
-[data-family="orrery"] .btn { letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+[data-family="orrery"] .btn { letter-spacing: 0.05em; text-transform: uppercase; font-size: 12px; }
 [data-family="orrery"] .ribbon { fill: var(--brass); opacity: 0.1; stroke: var(--brass); stroke-opacity: 0.6; stroke-width: 0.6; }
 [data-family="orrery"] .ribbon.hot { fill: var(--money); opacity: 0.5; stroke: var(--money); }
 [data-family="orrery"] .c-band { fill: var(--brass); opacity: 0.12; }
