@@ -354,7 +354,7 @@ function FileView({ change, f }: { change: Change; f: FileDiff }) {
   const gen = generated(f.path) && !noted;
   const shown = (!all && !gen) || peek || keys.some((k) => open.includes(k));
   const [loaded, setLoaded] = useState(!gen);
-  useEffect(() => { if (shown) setLoaded(true); }, [shown]);
+  if (shown && !loaded) setLoaded(true);
   return (
     <article className={`rv-file${shown ? "" : " shut"}`} data-file={f.path}>
       <header className="rv-fh" onClick={all || gen ? () => setPeek(!peek) : undefined}>
