@@ -108,10 +108,13 @@ function LensChip({ l, i }: { l: Lens; i: number }) {
 }
 
 const LAYOUTS: { value: Layout; label: string; tip: string }[] = [
+  { value: "content", label: "Content", tip: "The panels in two columns, without answers" },
+  { value: "floating", label: "Floating", tip: "Answers in order, in a column of their own" },
   { value: "beside", label: "Beside", tip: "Answers level with what they were asked about" },
-  { value: "column", label: "Column", tip: "Answers in order, in a column of their own" },
   { value: "below", label: "Below", tip: "Answers under the panel they were asked about" },
 ];
+
+const askQuestion = () => board.insert([]);
 
 export function Scopes() {
   const sel = useBoard((s) => s.sel);
@@ -119,13 +122,22 @@ export function Scopes() {
   const layout = useBoard((s) => s.layout);
   const cards = useBoard((s) => s.cards);
   const allFolded = useMemo(() => cards.length > 0 && cards.every((c) => c.open === false), [cards]);
+  // The question box handles / itself, and Content has none.
+  useEffect(() => {
+    if (layout !== "content") return;
+    const key = (e: KeyboardEvent) => { if (e.key === "/" && !(e.target as HTMLElement).closest("input, textarea, [contenteditable=true]")) { e.preventDefault(); askQuestion(); } };
+    addEventListener("keydown", key);
+    return () => removeEventListener("keydown", key);
+  }, [layout]);
   return (
     <div className="scopes" role="toolbar" aria-label="Records and answers">
       <Find />
       {sel.ids.length ? <SelChip /> : null}
       {lenses.map((l, i) => <LensChip key={l.id} l={l} i={i} />)}
       <span className="scopes-end">
-        {cards.length ? (
+        {layout === "content" ? (
+          <button type="button" className="btn quiet scopes-fold" onClick={askQuestion}>Ask question</button>
+        ) : cards.length ? (
           <button type="button" className="btn quiet scopes-fold" aria-pressed={allFolded} onClick={() => board.openAll(allFolded)}>{allFolded ? "Unfold answers" : "Fold answers"}</button>
         ) : null}
         <Segmented label="Answers" value={layout} onChange={(v) => board.setLayout(v)} options={LAYOUTS} />

@@ -20,8 +20,9 @@ A question is text with scopes in it. A scope is a panel, an answer, the selecti
 
 The layout picked in the toolbar decides where answers go:
 
+- **Content** leaves answers out and puts the panels in two columns. Ask question, the ask buttons and `/` switch to Floating and focus the question box.
+- **Floating** lists answers in the order they were asked, in a column that scrolls by itself.
 - **Beside** puts each answer level with the panel it was asked about, and a follow-up under the answer it follows. An answer about the whole case goes level with the panel that was on screen when it was asked.
-- **Column** lists answers in the order they were asked, in a column that scrolls by itself.
 - **Below** puts answers under their panels and gives the board the full width.
 
 When the answers in one place take more room than they have, the oldest fold to their titles. The answer touched last, the newest answer, answers named in the question box and answers opened by hand stay open.

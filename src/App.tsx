@@ -76,7 +76,7 @@ function Frame({ children, aside }: { children: ReactNode; aside: ReactNode }) {
       <div className="case" data-layout={layout}>
         <Scopes />
         <main className="board" data-stage={stage ?? undefined}>{children}</main>
-        {aside}
+        {layout === "content" ? null : aside}
       </div>
       <footer className="foot">All names and figures are invented. The portrait is a stand-in: <a href="https://commons.wikimedia.org/wiki/File:Nathan_Fielder_(cropped).jpg">Nathan Fielder</a>, photographed by Northwest, <a href="https://creativecommons.org/licenses/by-sa/4.0">CC BY-SA 4.0</a>, cropped and toned.</footer>
     </div>

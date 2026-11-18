@@ -54,9 +54,10 @@ export interface Selection { ids: string[]; label: string; from: string | null }
 export interface Busy { question: string; status: string; at: string | null; near?: string; kind: "edit" | "view" | "text" | "lens" | "stack" }
 // Records under the pointer: a reference in a written answer, or a mark in one of the views.
 export interface Hover { ids: string[]; from: "ref" | "mark"; at: string }
-// beside puts each answer level with what it was asked from, column lists them in order in their own scrolling
-// column, and below puts them under the panel they were asked from.
-export type Layout = "beside" | "column" | "below";
+// content leaves answers out and gives the panels two columns, floating lists answers in order in their own scrolling
+// column, beside puts each answer level with what it was asked from, and below puts them under the panel they were
+// asked from.
+export type Layout = "content" | "floating" | "beside" | "below";
 
 export interface BoardState {
   cards: Card[];
@@ -77,7 +78,12 @@ const KEY = "fui01-answers-1";
 const LAYOUT_KEY = "fui01-layout";
 function restore(): Pick<BoardState, "cards" | "lenses" | "layout"> {
   let layout: Layout = "beside";
-  try { const l = localStorage.getItem(LAYOUT_KEY); if (l === "column" || l === "below") layout = l; } catch { /* the default */ }
+  try {
+    const l = localStorage.getItem(LAYOUT_KEY);
+    // Floating was called column.
+    if (l === "column") layout = "floating";
+    else if (l === "content" || l === "floating" || l === "below") layout = l;
+  } catch { /* the default */ }
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? "null");
     // Older lenses could only mark their records, or called dimming "only".
@@ -141,6 +147,8 @@ export const board = {
   // Puts scopes and text into the question box at the caret. Text named by select is left selected, so typing
   // replaces it.
   insert(parts: Part[], select?: string) {
+    // Content has no question box, so asking goes to Floating.
+    if (state.layout === "content") board.setLayout("floating");
     if (inserter) inserter(parts, select);
     else queued.push([parts, select]);
   },

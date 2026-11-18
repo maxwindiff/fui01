@@ -3,26 +3,25 @@
   display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 0 24px;
   max-width: 1250px; margin: 0 auto; padding: 0 24px 64px;
   --code: "IBM Plex Mono", ui-monospace, Menlo, monospace;
-  --rv-box: color-mix(in srgb, var(--bg) 25%, #fff);
-  --rv-head: color-mix(in srgb, var(--rv-box) 93%, var(--ink));
+  --rv-head: color-mix(in srgb, var(--box) 93%, var(--ink));
 }
-[data-mode="dark"] .rv { --rv-box: color-mix(in srgb, var(--bg) 90%, var(--ink)); --rv-head: color-mix(in srgb, var(--bg) 84%, var(--ink)); }
+[data-mode="dark"] .rv { --rv-head: color-mix(in srgb, var(--bg) 84%, var(--ink)); }
 .rv-bar {
   grid-column: 1 / -1; position: sticky; top: var(--bar-h); z-index: 16;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; min-height: 52px; padding: 8px 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 52px; padding: 8px 0;
   background: var(--bg); border-bottom: var(--rule-w) solid var(--rule);
 }
 .rv-bar .seg button { padding: 3px 10px; font-size: 12.5px; }
-.rv-gap { flex: 1; }
-.rv-level { display: flex; align-items: center; gap: 10px; }
+.rv-gap { flex: 1 1 0; margin-left: -16px; }
+.rv-level { display: flex; align-items: center; gap: 8px; margin-left: -6px; }
 .rv-level input { flex: none; width: 56px; }
-.rv-level .label { flex: none; width: 76px; text-align: right; }
+.rv-level .label { flex: none; width: 72px; text-align: right; }
 .rv-progress { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
-.rv-progress .rv-meter { width: 120px; }
+.rv-progress .rv-meter { width: clamp(64px, 100vw - 900px, 100px); }
 .rv-ex { display: flex; align-items: center; gap: 8px; }
 .rv-sync { padding: 3px 10px; font-size: 12.5px; }
-.rv-ask { position: relative; flex: 0 1 320px; min-width: 180px; }
-.rv-ask input { width: 100%; padding: 4px 9px; border: var(--rule-w) solid var(--rule-strong); border-radius: var(--radius-ctl); background: var(--rv-box); color: var(--ink); font: 13px / 1.4 var(--font-ui); }
+.rv-ask { position: relative; flex: 1 1 140px; min-width: 140px; max-width: 320px; }
+.rv-ask input { width: 100%; padding: 4px 9px; border: var(--rule-w) solid var(--rule-strong); border-radius: var(--radius-ctl); background: var(--box); color: var(--ink); font: 13px / 1.4 var(--font-ui); }
 .rv-ask input:focus { outline: none; border-color: var(--accent); }
 .rv-ask-pop {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; display: grid; gap: 8px; width: min(560px, calc(100vw - 48px));
@@ -65,7 +64,7 @@
 .rv-tree .rv-meter { flex: none; width: 26px; }
 
 /* Files and hunks */
-.rv-file { background: var(--rv-box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); scroll-margin-top: calc(var(--bar-h) + 66px); }
+.rv-file { background: var(--box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); scroll-margin-top: calc(var(--bar-h) + 66px); }
 .rv-fh { position: sticky; top: calc(var(--bar-h) + 53px); z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 12px; background: var(--rv-head); border-bottom: var(--rule-w) solid var(--rule); border-radius: var(--radius) var(--radius) 0 0; }
 .rv-path { font: 500 13px var(--code); min-width: 0; overflow-wrap: anywhere; }
 .rv-stat { font-size: 12px; }
@@ -139,7 +138,7 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 
 /* Description from the author */
 .rv-pr { display: grid; gap: 6px; padding: 2px 0 6px; }
-.rv-pr-t { font: var(--title-weight) 20px / 1.25 var(--font-display); text-transform: var(--display-case); letter-spacing: var(--display-track); text-wrap: balance; }
+.rv-pr-t { font: var(--title-weight) 20px / 1.25 var(--font-display); text-wrap: balance; }
 .rv-pr-m { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--ink-3); font-size: 12.5px; }
 .rv-pr-b { display: grid; gap: 8px; max-width: 68ch; margin-top: 4px; font: 14px / 1.5 var(--font-text); overflow-wrap: anywhere; }
 
@@ -152,7 +151,7 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 .rv-cmt-t { white-space: pre-wrap; overflow-wrap: anywhere; }
 .rv-cmt .actions { margin-top: 8px; }
 .rv-write .chips { margin-top: 8px; }
-.rv-write .chip, .rv-ask-pop .chip { white-space: normal; text-align: left; font-weight: 400; }
+.rv .rv-write .chip, .rv .rv-ask-pop .chip { white-space: normal; text-align: left; font: 400 12.5px / 1.4 var(--font-ui); text-transform: none; letter-spacing: normal; }
 .rv-cmt .btn { padding: 3px 10px; font-size: 12px; }
 .rv-draft { border-style: dashed; }
 .rv-draft.sev-high { border-color: var(--alert); }
@@ -160,7 +159,7 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 .rv-write textarea { width: 100%; resize: vertical; padding: 6px 8px; border: var(--rule-w) solid var(--rule-strong); border-radius: var(--radius-ctl); background: var(--surface-2); color: var(--ink); font: 13px / 1.4 var(--font-ui); }
 .rv-write textarea:focus { outline: none; border-color: var(--accent); }
 .rv-qa { border-color: var(--rule); background: var(--surface-2); }
-.rv-qa-q { font-weight: 600; color: var(--ink); }
+.rv-qa-q { font-weight: 600; color: var(--ink); text-transform: none; letter-spacing: normal; }
 .rv-qa .ask-x { margin-left: auto; }
 .rv-qa-a { font: 13.5px / 1.5 var(--font-text); }
 
@@ -168,7 +167,7 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 .rv-flow { display: grid; gap: 16px; }
 .rv-flow-h { display: grid; gap: 4px; justify-items: start; }
 .rv-flow-h .btn { padding: 0; margin-bottom: 6px; }
-.rv-flow-t { font: var(--title-weight) 20px / 1.2 var(--font-display); text-transform: var(--display-case); letter-spacing: var(--display-track); }
+.rv-flow-t { font: var(--title-weight) 20px / 1.2 var(--font-display); }
 .rv-diagram {
   margin: 0; padding: 14px; background: var(--bg); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); overflow-x: auto;
   --pele-bg: var(--bg); --pele-fg: var(--ink); --pele-muted: var(--ink-2); --pele-line: var(--ink-2); --pele-border: var(--rule-strong);
@@ -180,10 +179,14 @@ button.rv-ln { padding: 0; border: 0; background: none; color: inherit; font: in
 .rv-steps > li { display: grid; gap: 8px; }
 .rv-step { display: flex; gap: 10px; align-items: baseline; font: 14px / 1.5 var(--font-text); }
 .rv-step-n { flex: none; display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--ink); color: var(--bg); font-size: 11.5px; transform: translateY(-2px); }
-.rv-steps .rv-hunk { margin-left: 30px; background: var(--rv-box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); overflow: hidden; }
-.rv-quote { margin: 0 0 0 30px; padding: 8px 12px; background: var(--rv-box); border: var(--rule-w) dashed var(--rule-strong); border-radius: var(--radius); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rv-steps .rv-hunk { margin-left: 30px; background: var(--box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+.rv-quote { margin: 0 0 0 30px; padding: 8px 12px; background: var(--box); border: var(--rule-w) dashed var(--rule-strong); border-radius: var(--radius); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rv-quote-f { display: block; margin-bottom: 4px; color: var(--ink-3); font: 11.5px var(--font-ui); }
 
+@media (max-width: 1100px) {
+  .rv-ex .label { display: none; }
+  .rv-bar .seg button { padding: 3px 7px; }
+}
 @media (max-width: 760px) {
   .rv { grid-template-columns: minmax(0, 1fr); padding: 0 16px 48px; }
   .rv-rail { grid-column: 1; position: static; max-height: none; }

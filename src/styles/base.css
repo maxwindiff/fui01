@@ -1,6 +1,9 @@
 * { box-sizing: border-box; }
 html { background: var(--bg); color-scheme: light; }
 html[data-mode="dark"] { color-scheme: dark; }
+/* Panels, answers and diffs sit on a ground lighter than the page in light themes, and a step above it in dark ones. */
+html { --box: color-mix(in srgb, var(--bg) 25%, #fff); }
+html[data-mode="dark"] { --box: color-mix(in srgb, var(--bg) 90%, var(--ink)); }
 body {
   margin: 0;
   min-height: 100vh;
@@ -75,7 +78,7 @@ svg { display: block; overflow: visible; }
 
 /* Panels */
 .shell { container: shell / inline-size; }
-.panel { grid-column: 1 / -1; position: relative; min-width: 0; display: flex; flex-direction: column; background: var(--surface); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); }
+.panel { grid-column: 1 / -1; position: relative; min-width: 0; display: flex; flex-direction: column; background: var(--box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius); }
 .panel-h { display: flex; align-items: center; gap: 10px; min-height: 42px; padding: 8px 14px; border-bottom: var(--rule-w) solid var(--rule); }
 .panel-title {
   font: var(--title-weight) var(--title-size) / 1.2 var(--font-display);
@@ -547,7 +550,7 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 .ans-col { position: relative; flex: 1; }
 .ans-card {
   position: absolute; top: 0; left: 0; right: 0; display: flex; flex-direction: column; min-width: 0;
-  background: var(--surface); border: var(--rule-w) solid var(--rule); border-radius: var(--radius);
+  background: var(--box); border: var(--rule-w) solid var(--rule); border-radius: var(--radius);
   transition: transform var(--dur-layout) var(--ease), border-color 0.2s, box-shadow 0.2s;
 }
 [data-motion="0"] .ans-card { transition: none; }
@@ -679,18 +682,22 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
 .ans-sw.sel { --c: var(--accent); cursor: inherit; }
 .ans-sw.ln0 { --c: var(--ln0); } .ans-sw.ln1 { --c: var(--ln1); } .ans-sw.ln2 { --c: var(--ln2); } .ans-sw.ln3 { --c: var(--ln3); }
 
-/* Layouts. Column: answers in order in a column with its own scroll, the question box under them. Below: answers in
-   slots under the panels, the board takes the full width, and the question box floats at the bottom. */
+/* Layouts. Content: no answers, and the panels in two columns. Floating: answers in order in a column with its own
+   scroll, the question box under them. Below: answers in slots under the panels, the board takes the full width, and
+   the question box floats at the bottom. */
+.case[data-layout="content"] { grid-template-columns: minmax(0, 1fr); }
+.case[data-layout="content"] .board:not([data-stage]) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.case[data-layout="content"] .board:not([data-stage]) > .panel { grid-column: auto; }
 .ans-slot { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; min-width: 0; }
 @media (max-width: 900px) { .ans-slot { grid-template-columns: minmax(0, 1fr); } }
 .ans-slot:empty, .board[data-stage] .ans-slot { display: none; }
-.ans-slot .ans-card, .answers[data-layout="column"] .ans-card { position: relative; transform: none !important; }
-.answers[data-layout="column"] {
+.ans-slot .ans-card, .answers[data-layout="floating"] .ans-card { position: relative; transform: none !important; }
+.answers[data-layout="floating"] {
   position: sticky; top: calc(var(--bar-h) + var(--scopes-h)); align-self: start;
   height: calc(100vh - var(--bar-h) - var(--scopes-h)); padding: 14px 0 16px;
 }
-.answers[data-layout="column"] .ans-col { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px; scrollbar-width: thin; }
-.answers[data-layout="column"] .ans-composer { position: relative; bottom: auto; margin-top: 12px; }
+.answers[data-layout="floating"] .ans-col { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 2px; scrollbar-width: thin; }
+.answers[data-layout="floating"] .ans-composer { position: relative; bottom: auto; margin-top: 12px; }
 .case[data-layout="below"] { grid-template-columns: minmax(0, 1fr); }
 .answers[data-layout="below"] { position: sticky; bottom: 0; z-index: 12; padding: 0 0 max(16px, env(safe-area-inset-bottom, 0px)); pointer-events: none; }
 .answers[data-layout="below"] .ans-col { display: none; }
@@ -712,7 +719,8 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
   .case { grid-template-columns: minmax(0, 1fr); }
   .ans-col { min-height: 0 !important; display: grid; gap: 14px; }
   .ans-card { position: static; transform: none !important; }
-  .answers[data-layout="column"] { position: relative; top: auto; height: auto; }
+  .answers[data-layout="floating"] { position: relative; top: auto; height: auto; }
+  .case[data-layout="content"] .board:not([data-stage]) { grid-template-columns: minmax(0, 1fr); }
   .ans-composer { position: fixed; left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(12px, env(safe-area-inset-bottom, 0px)); }
   .answers { padding-bottom: 96px; }
 }
@@ -722,7 +730,6 @@ input[type="range"]::-webkit-slider-thumb { appearance: none; width: 12px; heigh
   content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 30; opacity: 0.5;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .11 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-[data-family="vellum"] .panel { background: color-mix(in srgb, #F4F7F1 45%, transparent); }
 [data-family="vellum"] .corner { display: block; }
 [data-family="vellum"] .corner::before, [data-family="vellum"] .corner::after { content: ""; position: absolute; background: var(--ink); }
 [data-family="vellum"] .corner::before { left: -5px; top: 0; width: 14px; height: 1px; }

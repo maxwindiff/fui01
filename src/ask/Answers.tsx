@@ -568,7 +568,7 @@ function foldFor(groups: Group[], full: (id: string) => number, mini: (id: strin
 
 // Places the answers for each layout and decides which to fold. Beside: each answer to a case panel starts level
 // with the top of that panel, each answer to an answer follows it, and an answer to the whole case starts level with
-// the panel the reader was looking at. An answer that would overlap the one above it moves down. Column and below:
+// the panel the reader was looking at. An answer that would overlap the one above it moves down. Floating and below:
 // answers keep their order in the flow.
 function useArrange(layout: Layout, col: RefObject<HTMLDivElement | null>, order: Placed[], cards: Card[]) {
   const els = useRef(new Map<string, HTMLElement>());
@@ -616,7 +616,7 @@ function useArrange(layout: Layout, col: RefObject<HTMLDivElement | null>, order
     } else {
       for (const el of els.current.values()) el.style.transform = "";
       if (c) c.style.minHeight = "";
-      if (layout === "column") groups = [{ ids: order.map((o) => o.id), top: 0, limit: (c?.clientHeight ?? innerHeight) - 8 }];
+      if (layout === "floating") groups = [{ ids: order.map((o) => o.id), top: 0, limit: (c?.clientHeight ?? innerHeight) - 8 }];
       else {
         const by = new Map<string, string[]>();
         const root = (o: Placed): string => { const p = o.from && order.find((x) => x.id === o.from); return p ? root(p) : anchorOf(o) ?? "02"; };
@@ -713,10 +713,10 @@ export function Answers({ theme }: { theme: Theme }) {
   const newest = cards.reduce<Card | null>((m, c) => (!m || (c.at ?? 0) > (m.at ?? 0) ? c : m), null);
   const seen = useRef(newest?.id);
   useEffect(() => {
-    if (layout === "column" && col.current) col.current.scrollTo({ top: col.current.scrollHeight, behavior: "smooth" });
+    if (layout === "floating" && col.current) col.current.scrollTo({ top: col.current.scrollHeight, behavior: "smooth" });
     if (!newest || seen.current === newest.id) return;
     seen.current = newest.id;
-    if (layout === "column") return;
+    if (layout === "floating") return;
     const raf = requestAnimationFrame(() => {
       const el = document.querySelector<HTMLElement>(`[data-card="${newest.id}"]`);
       if (!el) return;
