@@ -163,7 +163,7 @@ export function App() {
         <Segmented label="Theme" value={id} onChange={setId} options={THEMES.map((t, i) => ({ value: t.id, label: t.name, tip: `Key ${i + 1}` }))} />
         <Segmented label="Page" value={page} onChange={setPage} options={[{ value: "review", label: "Review" }, { value: "case", label: "Case" }]} />
         {page === "case" ? <Crumbs root="Whitcombe case" /> : <span className="crumbs" />}
-        <MotionControl />
+        {page === "case" ? <MotionControl /> : null}
         {page === "case" ? <BriefButton /> : null}
       </header>
       {page === "case" ? (

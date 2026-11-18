@@ -91,7 +91,7 @@ A single frame loop in `scene.ts` serves every scene on the page. A scene redraw
 
 ### Levels
 
-The top bar sets a motion level from 0 to 3. `motion.ts` stores it in `localStorage` and starts at 0 when the system asks for reduced motion.
+On the Case page, the top bar sets a motion level from 0 to 3. `motion.ts` stores it in `localStorage` and starts at 0 when the system asks for reduced motion.
 
 | Level | Adds |
 |---|---|

@@ -151,9 +151,10 @@ function Attached({ change, hkey, from, to }: { change: Change; hkey: string; fr
 const TOK = /\/\/[^\n]*|\/\*.*?(?:\*\/|$)|\w+|\s+|[^\w\s]/g;
 const marks = new Map<string, boolean[]>();
 
-// Marks the characters of a pseudocode line that do not come from the lines it replaces, by a longest common
-// subsequence over tokens. A comment counts as one token. Punctuation matched between two marked tokens is marked too, so that a made-up call like
-// `group_answers_by(root)` is not underlined in pieces.
+// Marks the characters of a pseudocode line that are missing from the lines it replaces, or that stand next to code
+// cut from them, by a longest common subsequence over tokens. A comment counts as one token. Punctuation matched
+// between two marked tokens is marked too, so that a made-up call like `group_answers_by(root)` is not underlined in
+// pieces.
 function invented(text: string, source: string): boolean[] {
   const key = `${text}\u0000${source}`;
   const hit = marks.get(key);
@@ -161,16 +162,23 @@ function invented(text: string, source: string): boolean[] {
   const a = text.match(TOK) ?? [];
   const b = (source.match(TOK) ?? []).filter((t) => t.trim());
   const ws = a.map((t) => !t.trim());
-  const n = a.length, m = b.length;
-  const dp = new Uint16Array((n + 1) * (m + 1));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--)
-    dp[i * (m + 1) + j] = !ws[i] && a[i] === b[j] ? dp[(i + 1) * (m + 1) + j + 1] + 1 : Math.max(dp[(i + 1) * (m + 1) + j], dp[i * (m + 1) + j + 1]);
+  const n = a.length, m = b.length, W = m + 1, at = (i: number, j: number, k: number) => (i * W + j) * 3 + k;
+  // The best score for a[i..] and b[j..]: 2 for each kept token, less 1 for each stretch of source skipped between two
+  // kept tokens. The state k is 0 before the first kept token, 1 right after a kept token and 2 while skipping source.
+  const f = new Int32Array((n + 1) * W * 3);
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) for (let k = 0; k < 3; k++) {
+    let v = f[at(i + 1, j, k)];
+    v = Math.max(v, f[at(i, j + 1, k === 0 ? 0 : 2)] - (k === 1 ? 1 : 0));
+    if (!ws[i] && a[i] === b[j]) v = Math.max(v, 2 + f[at(i + 1, j + 1, 1)]);
+    f[at(i, j, k)] = v;
+  }
   const made = a.map((_, i) => !ws[i]);
-  for (let i = 0, j = 0; i < n && j < m;) {
-    if (ws[i]) i++;
-    else if (a[i] === b[j]) { made[i] = false; i++; j++; }
-    else if (dp[(i + 1) * (m + 1) + j] >= dp[i * (m + 1) + j + 1]) i++;
-    else j++;
+  const pairs: [number, number][] = [];
+  for (let i = 0, j = 0, k = 0; i < n && j < m;) {
+    const v = f[at(i, j, k)];
+    if (!ws[i] && a[i] === b[j] && v === 2 + f[at(i + 1, j + 1, 1)]) { made[i] = false; pairs.push([i, j]); i++; j++; k = 1; }
+    else if (v === f[at(i + 1, j, k)]) i++;
+    else { j++; k = k === 0 ? 0 : 2; }
   }
   const words = a.map((t, i) => (ws[i] ? -1 : i)).filter((i) => i >= 0);
   for (let k = 0; k < words.length;) {
@@ -178,6 +186,15 @@ function invented(text: string, source: string): boolean[] {
     while (e < words.length && !made[words[e]]) e++;
     if (e > k && k > 0 && e < words.length && words.slice(k, e).every((i) => !/\w/.test(a[i]))) words.slice(k, e).forEach((i) => { made[i] = true; });
     k = Math.max(e, k + 1);
+  }
+  // Source skipped between two adjacent kept tokens was cut without a replacement, so the word next to the cut is
+  // marked.
+  for (let k = 1; k < pairs.length; k++) {
+    const [[i1, j1], [i2, j2]] = [pairs[k - 1], pairs[k]];
+    if (j2 === j1 + 1 || words.indexOf(i2) !== words.indexOf(i1) + 1) continue;
+    if (/\w/.test(a[i1])) made[i1] = true;
+    else if (/\w/.test(a[i2])) made[i2] = true;
+    else made[i1] = made[i2] = true;
   }
   for (let k = 1; k < words.length; k++) if (made[words[k - 1]] && made[words[k]]) for (let i = words[k - 1] + 1; i < words[k]; i++) made[i] = true;
   const out = a.flatMap((t, i) => Array<boolean>(t.length).fill(made[i]));
